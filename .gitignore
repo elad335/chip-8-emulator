@@ -1,0 +1,98 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+
+# Compiled Dynamic libraries
+*.so
+
+# Compiled Static libraries
+*.lai
+*.la
+# *.a # Commented out since OpenAL Soft's binaries use this extension.
+*.opensdf
+*.sdf
+*.suo
+*.tlog
+*.idb
+*.pdb
+*.obj
+*.ilk
+*.pch
+
+*.log
+*.exe
+*.dll
+*.elf
+*.lastbuildstate
+*.unsuccessfulbuild
+*.res
+*.dump
+*.wav
+
+/build
+/lib
+/tmp
+/ipch
+/rpcs3/Debug
+/rpcs3/Release
+/llvm_build
+/Vulkan/Vulkan-build
+/Vulkan/glslang-build
+
+!/bin
+/bin/*
+
+# Themes
+!/bin/GuiConfigs/
+/bin/GuiConfigs/*.ini
+/bin/GuiConfigs/*.ini.*
+/bin/GuiConfigs/*.dat
+/bin/GuiConfigs/*.dat.*
+
+# Visual Studio Files
+.vs/*
+.vscode/*
+*.ipch
+*.vspx
+*.psess
+*.VC.*
+*.vcxproj.user
+enc_temp_folder/*
+CMakeSettings.json
+
+# Ignore other system generated files
+x64/*
+rpcs3/x64/*
+rpcs3/git-version.h
+
+# cmake
+Makefile
+*CMakeFiles*
+CMakeCache.txt
+*cmake_install.cmake*
+
+# cotire
+rpcs3/cotire/*
+rpcs3/rpcs3_*_cotire.cmake
+
+# kdevelop
+*.kdev4
+.kdev4/*
+
+# Qt
+moc_*.cpp
+qrc_*.cpp
+rpcs3_automoc.cpp
+ui_*.h
+rpcs3/rpcs3_autogen/*
+
+# QtCreator
+CMakeLists.txt.user
+
+# CLion
+/.idea/*
+/cmake-build-*/
+
+# macOS
+.DS_Store
