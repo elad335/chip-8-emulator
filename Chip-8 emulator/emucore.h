@@ -2,6 +2,17 @@
 
 #include "utils.h"
 
+union alignas(2) time_control
+{
+	struct alignas(2) type
+	{
+		u8 sound;
+		u8 delay;
+	} raw;
+
+	std::atomic<type> time;
+};
+
 namespace registers
 {
 	extern u8 vmMemory[4096];
@@ -11,8 +22,7 @@ namespace registers
 	extern u16 sp;
 	extern u16 pc;
 	extern u16 index;
-	extern std::atomic<u8> sound_timer;
-	extern std::atomic<u8> delay_timer;
+	extern time_control timers;
 };
 
 // Emulated CPU memory manager

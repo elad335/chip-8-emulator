@@ -19,10 +19,8 @@ namespace registers
 	u16 pc;
 	// Memory pointer
 	u16 index;
-	// Time until a beep is made
-	std::atomic<u8> sound_timer;
-	// Delay timer
-	std::atomic<u8> delay_timer;
+	// Container for delay timer and sound timer
+	time_control timers;
 };
 
 using namespace registers;
@@ -60,8 +58,7 @@ void resetRegisters()
 	::sp = 0;
 	::pc = 0x200;
 	::index = 0;
-	::sound_timer.store(0);
-	::delay_timer.store(0);
+	::timers.time.store({});
 	_mm_mfence();
 }
 
@@ -484,7 +481,7 @@ void ExecuteOpcode()
 		{
 			// Get delay timer
 			const u8 reg = getField<2>(opcode);
-			gpr[reg] = ::delay_timer;
+			gpr[reg] = timers.raw.delay;
 			return Procceed();
 		}
 		case 0x0A:
@@ -500,14 +497,14 @@ void ExecuteOpcode()
 		{
 			// Set dealy timer
 			const u8 reg = getField<2>(opcode);
-			::delay_timer = gpr[reg];
+			atomic::store(timers.raw.delay, gpr[reg]);
 			return Procceed();
 		}
 		case 0x18:
 		{
 			// Set sound timer
 			const u8 reg = getField<2>(opcode);
-			::sound_timer = gpr[reg];
+			atomic::store(timers.raw.sound, gpr[reg]);
 			return Procceed();
 		}
 		case 0x1E:

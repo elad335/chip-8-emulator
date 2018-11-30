@@ -34,7 +34,7 @@ typedef float f32;
 
 namespace atomic
 {
-    // Atomic operation PowerPC/ARM/TSX/PS3 style
+    // Atomic operation
     template <typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
 	__forceinline RT op(std::atomic<T>& var, F&& func)
     {
@@ -63,5 +63,11 @@ namespace atomic
                 }
             }
         }
+    }
+
+    template<typename T>
+    void store(T& var, T value)
+    {
+        reinterpret_cast<std::atomic<T>*>(&var)->store(value);
     }
 };

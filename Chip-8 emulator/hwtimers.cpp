@@ -12,18 +12,16 @@ void timerJob()
     {
         std::this_thread::sleep_for(std::chrono::microseconds( 16 ));
 
-        if (atomic::op(registers::sound_timer, [](u8& state)
+        // Decrement sound and delay timers if necessary
+        if (atomic::op(registers::timers.time, [](time_control::type& state)
         {
-            return state && --state == 0;
+            if (state.delay) state.delay--;
+
+            return state.sound && --state.sound == 0;
         }))
         {
-            // Beep
+            // Sound timer is zero, beep
             std::cout << "\a";
         }
-
-        atomic::op(registers::delay_timer, [](u8& state)
-        {
-            if (state) state--;
-        });
     }
 }
