@@ -12,21 +12,18 @@ void timerJob()
     {
         std::this_thread::sleep_for(std::chrono::microseconds( 16 ));
 
-        // Unfortunatly, this operation cant be handled via atomic op alone
-        std::lock_guard lock(time_m);
-
-        if (registers::sound_timer.load(std::memory_order_relaxed))
+        if (atomic::op(registers::sound_timer, [](u8& state)
         {
-            if (--registers::sound_timer == 0)
-            {
-                // Beep
-                std::cout << "\a";
-            }
+            return state && --state == 0;
+        }))
+        {
+            // Beep
+            std::cout << "\a";
         }
 
-        if (registers::delay_timer.load(std::memory_order_relaxed))
+        atomic::op(registers::delay_timer, [](u8& state)
         {
-            registers::delay_timer--;
-        }
+            if (state) state--;
+        });
     }
 }

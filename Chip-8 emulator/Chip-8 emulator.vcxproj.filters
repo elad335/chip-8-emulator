@@ -33,6 +33,9 @@
     <ClCompile Include="input.h">
       <Filter>Header Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils.h">
+      <Filter>Header Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="emucore.h">

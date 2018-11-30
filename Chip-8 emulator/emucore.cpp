@@ -27,43 +27,33 @@ namespace registers
 
 using namespace registers;
 
-// Timers mutex
-std::mutex time_m;
-
 // Update screen flag
 bool DisplayDirty = false;
 
-// Emulated CPU memory manager
-namespace vm
-{
-	template<typename T>
-	void write(u32 addr, T value)
-	{
-		*reinterpret_cast<T*>(vmMemory + addr) = value;
-	}
-
-	template<typename T>
-	T read(u32 addr)
-	{
-		return *reinterpret_cast<T*>(vmMemory + addr);
-	}
-
-	template<typename T>
-	T& ref(u32 addr)
-	{
-		return *reinterpret_cast<T*>(vmMemory + addr);
-	}
-
-	template<typename T>
-	T* ptr(u32 addr)
-	{
-		return reinterpret_cast<T*>(vmMemory + addr);
-	}
+static u8 fontset[80] =
+{ 
+	0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+	0x20, 0x60, 0x20, 0x20, 0x70, // 1
+	0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+	0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+	0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+	0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+	0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+	0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+	0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+	0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+	0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+	0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+	0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+	0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+	0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+	0xF0, 0x80, 0xF0, 0x80, 0x80  // F
 };
 
 void resetRegisters()
 {
-	std::memset(vmMemory, 0, 4096);
+	std::memset(vmMemory, 0xAA, 4096);
+	std::memcpy(vmMemory, fontset, 80);
 	std::memset(gfxMemory, 0, 2048);
 	std::memset(gpr, 0, 16 * sizeof(u8));
 	std::memset(stack, 0, 16 * sizeof(u16));
@@ -72,6 +62,7 @@ void resetRegisters()
 	::index = 0;
 	::sound_timer.store(0);
 	::delay_timer.store(0);
+	_mm_mfence();
 }
 
 
@@ -303,6 +294,7 @@ void ExecuteOpcode()
 			// TODO: Optimize with assembly
 			const u8 reg = getField<2>(opcode);
 			const u8 result = gpr[reg];
+
 			gpr[reg] = result >> 1;
 			getVF() = result & 1;
 			return Procceed();
@@ -498,35 +490,24 @@ void ExecuteOpcode()
 		case 0x0A:
 		{
 			// Get next key press (blocking)
-			//char n;
-			//u8 keyid;
+			u8 keyid = input::WaitForPress();
 
-			//do
-			//{ 
-			//	std::cin >> n;
-			//} while (!input::getKeyPress(n, keyid));
-			__debugbreak();
-
-			//const u8 reg = getField<2>(opcode);
-			//gpr[reg] = keyid;
+			const u8 reg = getField<2>(opcode);
+			gpr[reg] = keyid;
 			return Procceed();
 		}
 		case 0x15:
 		{
 			// Set dealy timer
 			const u8 reg = getField<2>(opcode);
-			time_m.lock();
 			::delay_timer = gpr[reg];
-			time_m.unlock();
 			return Procceed();
 		}
 		case 0x18:
 		{
 			// Set sound timer
 			const u8 reg = getField<2>(opcode);
-			time_m.lock();
 			::sound_timer = gpr[reg];
-			time_m.unlock();
 			return Procceed();
 		}
 		case 0x1E:
@@ -534,6 +515,13 @@ void ExecuteOpcode()
 			// Add register value to mem pointer
 			const u8 reg = getField<2>(opcode);
 			::index += gpr[reg];
+			return Procceed();
+		}
+		case 0x29:
+		{
+			// Set mem pointer to char
+			const u8 reg = getField<2>(opcode);
+			::index = (gpr[reg] & 0xF) * 5;
 			return Procceed();
 		}
 		case 0x33:
@@ -586,6 +574,6 @@ void ExecuteOpcode()
 	}
 	}
 
-	std::printf("Unimplemented/invalid instruction:0x%x", opcode);
-	//Exit();
+	std::printf("Unimplemented/invalid instruction: %04X", opcode);
+	while (true) Procceed(); // Stall infinitely
 }
