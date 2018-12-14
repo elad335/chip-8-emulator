@@ -265,13 +265,13 @@ void ExecuteOpcode()
 		case 0x4:
 		{
 			// ADD with carry (sets VF)
-			// TODO: Optimize with assembly?
 			const u8 reg = getField<2>(opcode);
 			const u8 reg2 = getField<1>(opcode);
 			const u16 result = (u16)gpr[reg] + (u16)gpr[reg2];
 
+			// Set carry as if greater than max
+			getVF() = (u8)(result >> 8);
 			gpr[reg] = (u8)result;
-			getVF() = (u8)((result >> 8) != 0);
 			return Procceed();
 		}
 		case 0x5:
@@ -281,19 +281,19 @@ void ExecuteOpcode()
 			const u8 reg2 = getField<1>(opcode);
 			const u16 result = (u16)gpr[reg] - (u16)gpr[reg2];
 
+			// Set sign as VF
+			getVF() = (u8)(result >> 15);
 			gpr[reg] = (u8)result;
-			getVF() = (u8)((result >> 8) != 0);
 			return Procceed();
 		}
 		case 0x6:
 		{
 			// Shift right by 0 (store LSB in VF)
-			// TODO: Optimize with assembly
 			const u8 reg = getField<2>(opcode);
-			const u8 result = gpr[reg];
+			u8 result = gpr[reg];
 
-			gpr[reg] = result >> 1;
 			getVF() = result & 1;
+			gpr[reg] = result >>= 1;
 			return Procceed();
 		}
 		case 0x7:
@@ -304,8 +304,9 @@ void ExecuteOpcode()
 			const u8 reg2 = getField<1>(opcode);
 			const u16 result = (u16)gpr[reg2] - (u16)gpr[reg];
 
+			// Set sign as VF
+			getVF() = (u8)(result >> 15);
 			gpr[reg] = (u8)result;
-			getVF() = (u8)((result >> 8) != 0);
 			return Procceed();
 		}
 		case 0x8:
@@ -316,13 +317,13 @@ void ExecuteOpcode()
 		case 0xD: break; // Illegal instruction
 		case 0xE:
 		{
-			// Shift left by 0 (store MSB in VF)
+			// Shift left by 1 (store MSB in VF)
 			// TODO: Optimize with assembly
 			const u8 reg = getField<2>(opcode);
 			const u8 result = gpr[reg];
 
+			getVF() = result >> 7;
 			gpr[reg] = result << 1;
-			getVF() = (result & (1 << 7)) >> 7;
 			return Procceed();
 		}
 		case 0xF: break; // Illegal instruction
