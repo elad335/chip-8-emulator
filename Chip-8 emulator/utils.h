@@ -16,6 +16,9 @@
 
 #include "Windows.h"
 
+#define force_inline __forceinline
+#define never_inline __declspec(noinline)
+
 typedef std::uint8_t u8;
 typedef std::uint16_t u16;
 typedef std::uint32_t u32;
@@ -36,7 +39,7 @@ namespace atomic
 {
     // Atomic operation
     template <typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
-	__forceinline RT op(std::atomic<T>& var, F&& func)
+	force_inline RT op(std::atomic<T>& var, F&& func)
     {
         T old = var.load(std::memory_order_relaxed), state;
 
@@ -65,9 +68,45 @@ namespace atomic
         }
     }
 
+	// Atomic operation (returns previous value)
+	template <typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
+	force_inline T fetch_op(std::atomic<T>& var, F&& func)
+	{
+		static_assert(std::is_void_v<RT>, "Unsupported function return type passed to fetch_op");
+
+		T old = var.load(std::memory_order_relaxed), state;
+
+		while (true)
+		{
+			std::invoke(std::forward<F>(func), (state = old));
+
+			if (var.compare_exchange_strong(old, state))
+			{
+				return old;
+			}
+		}
+	}
+
+
+
     template<typename T>
     void store(T& var, T value)
     {
         reinterpret_cast<std::atomic<T>*>(&var)->store(value);
     }
 };
+
+namespace
+{
+	template<typename T>
+	force_inline T assert(T& value)
+	{
+		if (!value)
+		{
+			*reinterpret_cast<u32*>(0ull) = 0;
+			_mm_sfence();
+		}
+
+		return value;
+	}
+}
