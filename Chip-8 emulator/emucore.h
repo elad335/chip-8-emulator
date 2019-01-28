@@ -2,15 +2,10 @@
 
 #include "utils.h"
 
-union alignas(2) time_control
+struct alignas(2) time_control_t
 {
-	struct alignas(2) type
-	{
-		u8 sound;
-		u8 delay;
-	} raw;
-
-	std::atomic<type> time;
+	u8 sound;
+	u8 delay;
 };
 
 namespace registers
@@ -22,7 +17,7 @@ namespace registers
 	extern u16 sp;
 	extern u16 pc;
 	extern u16 index;
-	extern time_control timers;
+	extern std::atomic<time_control_t> timers;
 };
 
 // Emulated CPU memory manager
