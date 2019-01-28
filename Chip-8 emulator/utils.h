@@ -37,15 +37,15 @@ typedef float f32;
 
 namespace atomic
 {
-    // Atomic operation
-    template <typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
+	// Atomic operation
+	template <typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
 	force_inline RT op(std::atomic<T>& var, F&& func)
-    {
-        T old = var.load(std::memory_order_relaxed), state;
+	{
+		T old = var.load(std::memory_order_acquire), state;
 
-        while (true)
-        {
-            state = old;
+		while (true)
+		{
+			state = old;
 
 			if constexpr (std::is_void_v<RT>)
 			{
@@ -58,15 +58,15 @@ namespace atomic
 			}
             else
             {
-                RT result = std::invoke(std::forward<F>(func), state);
+				RT result = std::invoke(std::forward<F>(func), state);
 
-                if (var.compare_exchange_strong(old, state))
-                {
-                    return result;
-                }
-            }
-        }
-    }
+				if (var.compare_exchange_strong(old, state))
+				{
+					return result;
+				}
+			}
+		}
+	}
 
 	// Atomic operation (returns previous value)
 	template <typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
@@ -74,7 +74,7 @@ namespace atomic
 	{
 		static_assert(std::is_void_v<RT>, "Unsupported function return type passed to fetch_op");
 
-		T old = var.load(std::memory_order_relaxed), state;
+		T old = var.load(std::memory_order_acquire), state;
 
 		while (true)
 		{
@@ -87,13 +87,31 @@ namespace atomic
 		}
 	}
 
+	// Atomic operation (cancelable, returns false if cancelled)
+	template<typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
+	force_inline bool cond_op(std::atomic<T>& var, F&& func)
+	{
+		// TODO: detect bool conversation existence
+		static_assert(std::is_same_v<RT, void> == false, "Unsupported function return type passed to cond_op");
 
+		T old = var.load(std::memory_order_acquire), state;
 
-    template<typename T>
-    void store(T& var, T value)
-    {
-        reinterpret_cast<std::atomic<T>*>(&var)->store(value);
-    }
+		while (true)
+		{
+			const RT ret = std::invoke(std::forward<F>(func), (state = old));
+
+			if (!ret || var.compare_exchange_strong(old, state))
+			{
+				return ret;
+			}
+		}
+	}
+
+	template<typename T>
+	void store(T& var, T value)
+	{
+		reinterpret_cast<std::atomic<T>*>(&var)->store(value);
+	}
 };
 
 namespace
@@ -103,8 +121,7 @@ namespace
 	{
 		if (!value)
 		{
-			*reinterpret_cast<u32*>(0ull) = 0;
-			_mm_sfence();
+			reinterpret_cast<std::atomic<u32>*>(nullptr)->exchange(0);
 		}
 
 		return value;
