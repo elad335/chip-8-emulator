@@ -127,3 +127,60 @@ namespace
 		return value;
 	}
 }
+
+template <typename T>
+struct be_t
+{
+	//be_t(T value)
+	//{
+	//	static_assert((std::is_integral_v<T> || std::is_enum_v<T>) && sizeof(T) > 1, "Value cannot be converted into be_t");
+	//}
+};
+
+template<>
+struct be_t<u16>
+{
+	u16 m_data;
+
+	constexpr be_t(const u16 value)
+		: m_data(value)
+	{
+	}
+
+	operator u16()
+	{
+		return _byteswap_ushort(m_data);
+	}
+};
+
+template<>
+struct be_t<u32>
+{
+	u32 m_data;
+
+	constexpr be_t(const u32 value)
+		: m_data(value)
+	{
+	}
+
+	operator u32()
+	{
+		return _byteswap_ulong(m_data);
+	}
+};
+
+template<>
+struct be_t<u64>
+{
+	u64 m_data;
+
+	constexpr be_t(const u64 value)
+		: m_data(value)
+	{
+	}
+
+	operator u64()
+	{
+		return _byteswap_uint64(m_data);
+	}
+};
