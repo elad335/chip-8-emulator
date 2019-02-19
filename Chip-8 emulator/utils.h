@@ -117,24 +117,57 @@ namespace atomic
 namespace
 {
 	template<typename T>
-	force_inline T assert(T& value)
+	force_inline T assert(const T&& value)
 	{
 		if (!value)
 		{
-			reinterpret_cast<std::atomic<u32>*>(nullptr)->exchange(0);
+			// Segfault
+			static_cast<std::atomic<u32>*>(nullptr)->load();
+		}
+
+		return value;
+	}
+
+	// Assert if condition provided fails (via lambda)
+	template<typename T, typename F>
+	force_inline T assert(const T&& value, F&& func)
+	{
+		if (!func(value))
+		{
+			// Segfault
+			static_cast<std::atomic<u32>*>(nullptr)->load();
 		}
 
 		return value;
 	}
 }
 
+// Current implementation only allows usage of unsigned types
 template <typename T>
 struct be_t
 {
-	//be_t(T value)
-	//{
-	//	static_assert((std::is_integral_v<T> || std::is_enum_v<T>) && sizeof(T) > 1, "Value cannot be converted into be_t");
-	//}
+	be_t()
+	{
+		static_assert(false, "Type does not meet the requirements of BE storage");
+	}
+};
+
+// Specailization
+template<>
+struct be_t<u8>
+{
+	u16 m_data;
+
+	constexpr be_t(const u8 value)
+		: m_data(value)
+	{
+	}
+
+	// A single byte doesnt byteswapping
+	operator u8()
+	{
+		return m_data;
+	}
 };
 
 template<>
