@@ -1,32 +1,9 @@
 #pragma once
 
-#include "emucore.h"
 #include "input.h"
+#include "emucore.h"
 
-namespace registers
-{
-	// The RAM
-	u8 vmMemory[4096];
-	// Video memory (64*32 pixels)
-	u8 gfxMemory[2048];
-	// Registers
-	u8 gpr[16];
-	// Stack
-	u16 stack[16];
-	// Stack pointer
-	u16 sp;
-	// Current instruction address
-	u16 pc;
-	// Memory pointer
-	u16 index;
-	// Container for delay timer and sound timer
-	std::atomic<time_control_t> timers;
-};
-
-using namespace registers;
-
-// Update screen flag
-bool DisplayDirty = false;
+emu_state_t g_state;
 
 static u8 fontset[80] =
 { 
@@ -48,56 +25,38 @@ static u8 fontset[80] =
 	0xF0, 0x80, 0xF0, 0x80, 0x80  // F
 };
 
-void resetRegisters()
+void emu_state_t::reset()
 {
-	std::memset(vmMemory, 0xAA, 4096);
-	std::memcpy(vmMemory, fontset, 80);
-	std::memset(gfxMemory, 0, 2048);
-	std::memset(gpr, 0, 16 * sizeof(u8));
-	std::memset(stack, 0, 16 * sizeof(u16));
-	::sp = 0;
-	::pc = 0x200;
-	::index = 0;
-	::timers.store({});
+	std::memset(vmMemory, 0xAA, sizeof(vmMemory));
+	std::memcpy(vmMemory, fontset, sizeof(fontset));
+	std::memset(gfxMemory, 0, sizeof(gfxMemory));
+	std::memset(gpr, 0, sizeof(gpr));
+	std::memset(stack, 0, sizeof(stack));
+	sp = 0;
+	pc = 0x200;
+	index = 0;
+	timers.store({});
 	_mm_mfence();
 }
 
-
-template<size_t index>
-inline u8 getField(u16 opcode)
-{
-	if constexpr (index == 0)
-	{
-		// Optimization
-		return opcode & 0xF;
-	}
-
-	if constexpr (index == 3)
-	{
-		// Optimization
-		return opcode >> 12;
-	}
-
-	return (opcode >> (index * 4)) & 0xF;
-}
-
-constexpr u8& getVF()
+static u8& getVF()
 {
 	// The 15 register
-	return gpr[0xF];
+	return g_state.gpr[0xF];
 }
 
-void ExecuteOpcode()
+// Execute one instruction for fallback (slower)
+void emu_state_t::OpcodeFallback()
 {
 	// Procced normally
-	auto Procceed = [&](const bool jump = false)
+	auto Procceed = [this](const bool jump = false)
 	{
-		if (!jump) ::pc += 2;
+		if (!jump) pc += 2;
 		std::this_thread::yield();
 	};
 
 	// Big Endian architecture, swap bytes
-	const u16 opcode = _byteswap_ushort(vm::read<u16>(::pc));
+	const u16 opcode = vm::read<be_t<u16>>(pc);
 
 	switch (getField<3>(opcode))
 	{
@@ -107,43 +66,44 @@ void ExecuteOpcode()
 
 		if (opcode == 0x00EE)
 		{
-			// Return
+			// RET: Return
 			if (sp == 0)
 			{
 				break;
 			}
 
-			::pc = ::stack[--sp];
+			pc = stack[--sp];
 			return Procceed(true);
 		}
 		else if (opcode == 0x00E0)
 		{
-			// Display clear
+			// CLS: Display clear
 			std::memset(&gfxMemory[0], 0, 2048);
-			DisplayDirty = true;
-			_mm_mfence();
+			emu_flags |= emu_flag::clear_screan;
+			_mm_sfence();
 			return Procceed();
 		}
 		else
 		{
+			// SYS
 			printf("Unimplemented RCA-1802 program call");
 			break;
 		}
 	}
 	case 0x1:
 	{
-		// Jump
+		// JP: Jump
 		if (opcode % 2)
 		{
 			break;
 		}
 
-		::pc = opcode & 0x0FFF;
+		pc = opcode & 0x0FFF;
 		return Procceed(true);
 	}
 	case 0x2:
 	{
-		// Call
+		// CALL
 		if (sp > 15)
 		{
 			// Overflow
@@ -156,17 +116,17 @@ void ExecuteOpcode()
 			break;
 		}
 
-		::stack[sp++] = std::exchange(pc, opcode & 0x0FFF) + 2;
+		stack[sp++] = std::exchange(pc, opcode & 0x0FFF) + 2;
 		return Procceed(true);
 	}
 	case 0x3:
 	{
-		// Skip instruction conditional using immediate (if equal)
+		// SE(i): Skip instruction conditional using immediate (if equal)
 		const u8 reg = getField<2>(opcode);
 
 		if (gpr[reg] == (opcode & 0xFF))
 		{
-			::pc += 4;
+			pc += 4;
 			return Procceed(true);
 		}
 
@@ -174,12 +134,12 @@ void ExecuteOpcode()
 	}
 	case 0x4:
 	{
-		// Skip instruction conditional using immediate (if does not equal)
+		// SNE(i): Skip instruction conditional using immediate (if does not equal)
 		const u8 reg = getField<2>(opcode);
 
 		if (gpr[reg] != (opcode & 0xFF))
 		{
-			::pc += 4;
+			pc += 4;
 			return Procceed(true);
 		}
 
@@ -195,13 +155,13 @@ void ExecuteOpcode()
 			break;
 		}
 
-		// Skip instruction conditional using register (if equal)
+		// SE: Skip instruction conditional using register (if equal)
 		const u8 reg = getField<2>(opcode);
 		const u8 reg2 = getField<1>(opcode);
 
 		if (gpr[reg] == gpr[reg2])
 		{
-			::pc += 4;
+			pc += 4;
 			return Procceed(true);
 		}
 
@@ -270,6 +230,7 @@ void ExecuteOpcode()
 			const u16 result = (u16)gpr[reg] + (u16)gpr[reg2];
 
 			// Set carry as if greater than max
+			if (reg == 15) __debugbreak();
 			getVF() = (u8)(result >> 8);
 			gpr[reg] = (u8)result;
 			return Procceed();
@@ -282,6 +243,7 @@ void ExecuteOpcode()
 			const u16 result = (u16)gpr[reg] - (u16)gpr[reg2];
 
 			// Set sign as VF
+			if (reg == 15) __debugbreak();
 			getVF() = (u8)(result >> 15);
 			gpr[reg] = (u8)result;
 			return Procceed();
@@ -292,19 +254,20 @@ void ExecuteOpcode()
 			const u8 reg = getField<2>(opcode);
 			u8 result = gpr[reg];
 
+			if (reg == 15) __debugbreak();
 			getVF() = result & 1;
 			gpr[reg] = result >>= 1;
 			return Procceed();
 		}
 		case 0x7:
 		{
-			// SUB with carry (opposite) (sets VF)
-			// TODO: Optimize with assembly
+			// Reverse SUB with carry (sets VF)
 			const u8 reg = getField<2>(opcode);
 			const u8 reg2 = getField<1>(opcode);
 			const u16 result = (u16)gpr[reg2] - (u16)gpr[reg];
 
 			// Set sign as VF
+			if (reg == 15) __debugbreak();
 			getVF() = (u8)(result >> 15);
 			gpr[reg] = (u8)result;
 			return Procceed();
@@ -322,6 +285,7 @@ void ExecuteOpcode()
 			const u8 reg = getField<2>(opcode);
 			const u8 result = gpr[reg];
 
+			if (reg == 15) __debugbreak();
 			getVF() = result >> 7;
 			gpr[reg] = result << 1;
 			return Procceed();
@@ -341,13 +305,13 @@ void ExecuteOpcode()
 			break;
 		}
 
-		// Skip instruction conditional using register (if not equal)
+		// SNE: Skip instruction conditional using register (if not equal)
 		const u8 reg = getField<2>(opcode);
 		const u8 reg2 = getField<1>(opcode);
 
 		if (gpr[reg] != gpr[reg2])
 		{
-			::pc += 4;
+			pc += 4;
 			return Procceed(true);
 		}
 
@@ -356,34 +320,34 @@ void ExecuteOpcode()
 	case 0xA:
 	{
 		// Set memory pointer immediate
-		::index = opcode & 0xFFF;
+		index = opcode & 0xFFF;
 		return Procceed();
 	}
 	case 0xB:
 	{
 		// Jump with offset using register 0
-		::pc = ((opcode + gpr[0]) & 0xFFF);
+		pc = ((opcode + gpr[0]) & 0xFFF);
 		return Procceed(true);
 	}
 	case 0xC:
 	{
-		// Set random number with bit mask
+		// RND: Set random number with bit mask
 		const u8 reg = getField<2>(opcode);
 		gpr[reg] = std::rand() & (opcode & 0xFF);
 		return Procceed();
 	}
 	case 0xD:
 	{
-		// Draw call sprite
+		// DRW: Draw call sprite
 		const u8 reg = getField<2>(opcode);
 		const u8 reg2 = getField<1>(opcode);
 		const u8 size = getField<0>(opcode);
 
 		// Get the start of sprite location in vram
-		u8* vbuffer = ::gfxMemory + (gpr[reg] & 0x3f) + ((gpr[reg2] & 0x1f) * 32);
+		u8* vbuffer = gfxMemory + (gpr[reg] & 0x3f) + ((gpr[reg2] & 0x1f) * 32);
 
 		// Get the start of the sprite in ram
-		u8* src = vm::ptr<u8>(::index);
+		u8* src = vm::ptr<u8>(index);
 
 		// Packed row of pixels
 		u8 pvalue;
@@ -400,35 +364,35 @@ void ExecuteOpcode()
 			if (pvalue)
 			{
 				// Update the screen in case any pixel is flipped
-				DisplayDirty = true;
-			}
+				emu_flags |= emu_flag::display_update;
 
-			// Unpack bits into pixels
-			for (u32 i = 0; i < 8; i++)
-			{
-				// Trick: substruct from 0 to obtain grayscale
-				const u8 pixel = 0u - ((pvalue >> i) & 0x1);
-
-				// Obtain pointer to the pixel dst
-				auto ptr = vbuffer + i + (row * 64);
-			
-				// Perform tests related to its color
-				if (pixel)
+				// Unpack bits into pixels
+				for (u32 i = 0; i < 8; i++)
 				{
-					if (*ptr != 0)
-					{
-						// Pixel unset
-						getVF() = 1;
-					}
+					// Trick: substruct from 0 to obtain grayscale
+					const u8 pixel = 0u - ((pvalue >> i) & 0x1);
 
-					// Update pixel
-					*ptr ^= pixel;
+					// Obtain pointer to the pixel dst
+					auto ptr = vbuffer + i + (row * 64);
+
+					// Perform tests related to its color
+					if (pixel)
+					{
+						if (*ptr != 0)
+						{
+							// Pixel unset
+							getVF() = 1;
+						}
+
+						// Update pixel
+						*ptr ^= pixel;
+					}
 				}
 			}
 		}
 
 		// Stores must be visible to all threads after this instruction 
-		_mm_mfence();
+		_mm_sfence();
 
 		return Procceed();
 	}
@@ -440,14 +404,14 @@ void ExecuteOpcode()
 		{
 		case 0x9E:
 		{
-			// Skip instruction if specified key is pressed
+			// SKP: Skip instruction if specified key is pressed
 			const u8 reg = getField<2>(opcode);
 
 			const bool pressed = input::GetKeyState(gpr[reg] & 0xf);
 
 			if (pressed)
 			{
-				::pc += 4;
+				pc += 4;
 				return Procceed(true);
 			}
 
@@ -455,14 +419,14 @@ void ExecuteOpcode()
 		}
 		case 0xA1:
 		{
-			// Skip instruction if specified key is not pressed
+			// SKNP: Skip instruction if specified key is not pressed
 			const u8 reg = getField<2>(opcode);
 
 			const bool pressed = input::GetKeyState(gpr[reg] & 0xf);
 
 			if (!pressed)
 			{
-				::pc += 4;
+				pc += 4;
 				return Procceed(true);
 			}
 
@@ -522,14 +486,14 @@ void ExecuteOpcode()
 		{
 			// Add register value to mem pointer
 			const u8 reg = getField<2>(opcode);
-			::index += gpr[reg];
+			index += (u32)gpr[reg];
 			return Procceed();
 		}
 		case 0x29:
 		{
 			// Set mem pointer to char
 			const u8 reg = getField<2>(opcode);
-			::index = (gpr[reg] & 0xF) * 5;
+			index = (gpr[reg] & 0xF) * 5;
 			return Procceed();
 		}
 		case 0x33:
@@ -541,7 +505,7 @@ void ExecuteOpcode()
 			};
 
 			const u8 rvalue = gpr[getField<2>(opcode)];
-			auto out = vm::ref<decimal_t>(::index);
+			auto out = vm::ref<decimal_t>(index);
 
 			// Try to extract the first digit using optimized path
 			// Knowing it can only be 2,1,0
@@ -566,14 +530,14 @@ void ExecuteOpcode()
 		{
 			// Reg array store 
 			const u8 max_reg = getField<2>(opcode);
-			std::memcpy(vm::ptr<u8>(::index), &gpr[0], max_reg);
+			std::memcpy(vm::ptr<u8>(index), &gpr[0], max_reg);
 			return Procceed();
 		}
 		case 0x65:
 		{
 			// Reg array load
 			const u8 max_reg = getField<2>(opcode);
-			std::memcpy(&gpr[0], vm::ptr<u8>(::index), max_reg);
+			std::memcpy(&gpr[0], vm::ptr<u8>(index), max_reg);
 			return Procceed();
 		}
 		default: break;
@@ -582,6 +546,5 @@ void ExecuteOpcode()
 	}
 	}
 
-	std::printf("Unimplemented/invalid instruction: %04X", opcode);
-	while (true) Procceed(); // Stall infinitely
+	emu_flags |= emu_flag::illegal_operation;
 }
