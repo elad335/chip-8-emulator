@@ -4,23 +4,26 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 15.0.28307.106
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Chip-8 emulator", "Chip-8 emulator\Chip-8 emulator.vcxproj", "{042D34FB-8D7B-4E1E-B1F8-E5C66EBC91A3}"
+	ProjectSection(ProjectDependencies) = postProject
+		{AC40FF01-426E-4838-A317-66354CEFAE88} = {AC40FF01-426E-4838-A317-66354CEFAE88}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "asmjit", "asmjitsrc\asmjit.vcxproj", "{AC40FF01-426E-4838-A317-66354CEFAE88}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
-		Debug|x86 = Debug|x86
 		Release|x64 = Release|x64
-		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{042D34FB-8D7B-4E1E-B1F8-E5C66EBC91A3}.Debug|x64.ActiveCfg = Debug|x64
 		{042D34FB-8D7B-4E1E-B1F8-E5C66EBC91A3}.Debug|x64.Build.0 = Debug|x64
-		{042D34FB-8D7B-4E1E-B1F8-E5C66EBC91A3}.Debug|x86.ActiveCfg = Debug|Win32
-		{042D34FB-8D7B-4E1E-B1F8-E5C66EBC91A3}.Debug|x86.Build.0 = Debug|Win32
 		{042D34FB-8D7B-4E1E-B1F8-E5C66EBC91A3}.Release|x64.ActiveCfg = Release|x64
 		{042D34FB-8D7B-4E1E-B1F8-E5C66EBC91A3}.Release|x64.Build.0 = Release|x64
-		{042D34FB-8D7B-4E1E-B1F8-E5C66EBC91A3}.Release|x86.ActiveCfg = Release|Win32
-		{042D34FB-8D7B-4E1E-B1F8-E5C66EBC91A3}.Release|x86.Build.0 = Release|Win32
+		{AC40FF01-426E-4838-A317-66354CEFAE88}.Debug|x64.ActiveCfg = Debug|x64
+		{AC40FF01-426E-4838-A317-66354CEFAE88}.Debug|x64.Build.0 = Debug|x64
+		{AC40FF01-426E-4838-A317-66354CEFAE88}.Release|x64.ActiveCfg = Release|x64
+		{AC40FF01-426E-4838-A317-66354CEFAE88}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

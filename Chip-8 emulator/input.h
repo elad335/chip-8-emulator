@@ -3,6 +3,7 @@
 
 namespace input
 {
-    bool GetKeyState(u8 keyid);
-    u8 WaitForPress();
+	extern int keyIDs[16];
+	bool GetKeyState(u8 keyid);
+	u8 WaitForPress();
 };

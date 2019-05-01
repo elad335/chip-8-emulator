@@ -8,16 +8,25 @@
 #include <thread>
 #include <chrono>
 #include <mutex>
+#include <array>
 #include <atomic>
 #include <string>
 #include <iterator>
 #include <fstream>
 #include <immintrin.h>
+#include <functional>
 
 #include "Windows.h"
+#undef min // Workaround for asmjit compilation (using std::min)
+#undef max // This is techinically windows.h fault and not anyone's else
 
 #define force_inline __forceinline
 #define never_inline __declspec(noinline)
+
+#define ASSUME(...) __assume(__VA_ARGS__)
+#define UNREACHABLE() ASSUME(0)
+
+#define hwBpx() __debugbreak()
 
 typedef std::uint8_t u8;
 typedef std::uint16_t u16;
@@ -56,8 +65,8 @@ namespace atomic
 					return;
 				}
 			}
-            else
-            {
+			else
+			{
 				RT result = std::invoke(std::forward<F>(func), state);
 
 				if (var.compare_exchange_strong(old, state))
@@ -132,7 +141,7 @@ namespace
 	template<typename T, typename F>
 	force_inline T assert(const T&& value, F&& func)
 	{
-		if (!func(value))
+		if (!std::invoke(std::forward<F>(func), value))
 		{
 			// Segfault
 			static_cast<std::atomic<u32>*>(nullptr)->load();
@@ -163,7 +172,7 @@ struct be_t<u8>
 	{
 	}
 
-	// A single byte doesnt byteswapping
+	// A single byte doesnt need byteswapping
 	operator u8()
 	{
 		return m_data;
@@ -217,3 +226,47 @@ struct be_t<u64>
 		return _byteswap_uint64(m_data);
 	}
 };
+
+// This returns relative offset of member class from 'this'
+template <typename T, typename T2>
+inline u32 offset32(T T2::*const mptr)
+{
+#ifdef _MSC_VER
+	static_assert(sizeof(mptr) == sizeof(u32), "Invalid pointer-to-member size");
+	return reinterpret_cast<const u32&>(mptr);
+#elif __GNUG__
+	static_assert(sizeof(mptr) == sizeof(std::size_t), "Invalid pointer-to-member size");
+	return static_cast<u32>(reinterpret_cast<const std::size_t&>(mptr));
+#else
+	static_assert(sizeof(mptr) == 0, "Invalid pointer-to-member size");
+#endif
+}
+
+inline std::array<u32, 4> get_cpuid(u32 func, u32 subfunc)
+{
+	int regs[4];
+#ifdef _MSC_VER
+	__cpuidex(regs, func, subfunc);
+#else
+	__asm__ volatile("cpuid" : "=a" (regs[0]), "=b" (regs[1]), "=c" (regs[2]), "=d" (regs[3]) : "a" (func), "c" (subfunc));
+#endif
+	return { 0u + regs[0], 0u + regs[1], 0u + regs[2], 0u + regs[3] };
+}
+
+inline u64 get_xgetbv(u32 xcr)
+{
+#ifdef _MSC_VER
+	return _xgetbv(xcr);
+#else
+	u32 eax, edx;
+	__asm__ volatile("xgetbv" : "=a"(eax), "=d"(edx) : "c"(xcr));
+	return eax | (u64(edx) << 32);
+#endif
+}
+
+// Checvk if CPU has AVX support (taken from https://github.com/RPCS3/rpcs3/blob/master/Utilities/sysinfo.cpp#L29)
+static bool has_avx()
+{
+	static const bool g_value = get_cpuid(0, 0)[0] >= 0x1 && get_cpuid(1, 0)[2] & 0x10000000 && (get_cpuid(1, 0)[2] & 0x0C000000) == 0x0C000000 && (get_xgetbv(0) & 0x6) == 0x6;
+	return g_value;
+}

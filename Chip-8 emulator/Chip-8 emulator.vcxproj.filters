@@ -13,6 +13,12 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\ASMJIT">
+      <UniqueIdentifier>{bf82f6cd-9a18-40a6-9d98-a970ad132685}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\ASMJIT">
+      <UniqueIdentifier>{2b9ad0f7-31af-4a2f-863f-e6ea8292c117}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="emucore.cpp">
@@ -36,10 +42,30 @@
     <ClCompile Include="utils.h">
       <Filter>Header Files</Filter>
     </ClCompile>
+    <ClCompile Include="ASMJIT\AsmInterpreter.cpp">
+      <Filter>Source Files\ASMJIT</Filter>
+    </ClCompile>
+    <ClCompile Include="ASMJIT\asmutils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="emucore.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ASMJIT\AsmInterpreter.h">
+      <Filter>Header Files\ASMJIT</Filter>
+    </ClInclude>
+    <ClInclude Include="ASMJIT\asmutils.h">
+      <Filter>Header Files\ASMJIT</Filter>
+    </ClInclude>
+    <ClInclude Include="InterpreterTableGenereator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\pong.rom">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

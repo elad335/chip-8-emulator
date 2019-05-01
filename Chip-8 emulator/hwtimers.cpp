@@ -8,15 +8,15 @@
 
 void timerJob()
 {
-    while (true)
-    {
-        std::this_thread::sleep_for(std::chrono::microseconds( 16 ));
+	while (true)
+	{
+		Sleep(16);
 
 		bool result = false;
 
-        // Decrement sound and delay timers if necessary
-        atomic::cond_op(registers::timers, [&result](time_control_t& state)
-        {
+		// Decrement sound and delay timers if necessary
+		atomic::cond_op(g_state.timers, [&result](time_control_t& state)
+		{
 			if (state.delay)
 			{
 				--state.delay;
@@ -45,9 +45,9 @@ void timerJob()
 		});
 
 		if (result)
-        {
-            // Sound timer is zero, beep
-            std::cout << "\a";
-        }
-    }
+		{
+			// Sound timer is zero, beep
+			std::cout << "\a";
+		}
+	}
 }
