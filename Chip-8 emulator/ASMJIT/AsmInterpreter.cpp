@@ -6,7 +6,7 @@
 
 using namespace asmjit;
 
-// 
+//
 static const X86Gp& state = x86::rcx;
 static const X86Gp& opcode = x86::rdx;
 static const X86Gp& pc = x86::rax;
@@ -29,11 +29,9 @@ static std::array<const X86Gp, 4> args =
 //	x86::r11
 //};
 
-//#define DEBUG_INSTS
-
 #define DECLARE(...) decltype(__VA_ARGS__) __VA_ARGS__
 #define STATE_OFFS(member) ::offset32(&emu_state_t::member)
-#define STACK_RESERVE 40u
+#define STACK_RESERVE 40u // TODO: Comnsider moving to asmjit entry
 //#define get_u256 x86::yword_ptr
 //#define get_u128 x86::oword_ptr
 //#define get_u64 x86::qword_ptr
@@ -48,7 +46,7 @@ static void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcod
 	constexpr u32 index = _index ^ (is_be ? 2 : 0);
 
 	// Optimize if self modify
-	if (&reg != &opcode)
+	if (reg != opcode)
 	{
 		c.mov(reg.r32(), opr.r32());
 	}
@@ -64,15 +62,23 @@ static void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcod
 	}
 };
 
-// Fallback for debugging
-static inline void _fallback(X86Assembler& c)
+// Fallback to cpp interpreter for debugging
+static inline void fallback(X86Assembler& c)
 {
-	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
-	c.or_(x86::dword_ptr(state, STATE_OFFS(emu_flags)), emu_flag::fallback);
-	c.ret();
-}
+	// Wrapper to member function
+	static const auto call_interpreter = [](emu_state_t* state)
+	{
+		return state->OpcodeFallback();
+	};
 
-#define FALLBACK(c) return _fallback(c)
+	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
+	c.sub(x86::rsp, STACK_RESERVE + 8);
+	c.mov(x86::qword_ptr(x86::rsp, STACK_RESERVE + 0), state);
+	c.call(imm_ptr<void(*)(emu_state_t*)>(call_interpreter));
+	c.mov(state, x86::qword_ptr(x86::rsp, STACK_RESERVE + 0));
+	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
+	c.add(x86::rsp, STACK_RESERVE + 8);
+}
 
 static asmjit::X86Mem refVF()
 {
@@ -98,13 +104,13 @@ static asm_insts::func_t build_instruction(F&& func)
 			c.sub(x86::rsp, STACK_RESERVE + 8);
 			c.mov(x86::qword_ptr(x86::rsp, STACK_RESERVE + 0), state);
 			c.mov(args[0], 16);
-			c.call(imm_ptr((void*)Sleep));
+			c.call(imm_ptr((void*)::Sleep));
 			c.mov(state, x86::qword_ptr(x86::rsp, STACK_RESERVE + 0));
 			c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 			c.add(x86::rsp, STACK_RESERVE + 8);
 		}
 
-		c.mov(args[1].r16(), x86::word_ptr(state, pc, 0, STATE_OFFS(vmMemory)));
+		c.mov(args[1].r16(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
 		c.xchg(x86::dl, x86::dh); // This can be optimized with some changes
 		c.jmp(x86::qword_ptr(state, args[1], 3, STATE_OFFS(ops)));
 	});
@@ -115,7 +121,7 @@ DECLARE(asm_insts::entry) = build_function_asm<decltype(asm_insts::entry)>([](X8
 	// This can also save registers onto stack
 	// But since we are only using caller saved registers theres no need to at the moment
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc))); // Load pc
-	c.movzx(args[1].r32(), x86::word_ptr(state, pc, 0, STATE_OFFS(vmMemory)));
+	c.movzx(args[1].r32(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
 	c.xchg(x86::dl, x86::dh); // This can be optimized with some changes
 	c.jmp(x86::qword_ptr(state, args[1], 3, STATE_OFFS(ops)));
 });
@@ -372,7 +378,7 @@ DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
 
 	// Ram pointer
 	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(index)));
-	c.lea(x86::r8, x86::qword_ptr(state, x86::r8, 0, STATE_OFFS(vmMemory)));
+	c.lea(x86::r8, x86::qword_ptr(state, x86::r8, 0, STATE_OFFS(memBase)));
 
 	getField<1>(c, x86::r9);
 	c.mov(x86::r9b, x86::byte_ptr(state, x86::r9, 0, STATE_OFFS(gpr)));
@@ -534,7 +540,8 @@ DECLARE(asm_insts::STD) = build_instruction([](X86Assembler& c)
 	c.movzx(x86::eax, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.mov(x86::dl, 100);
 	c.div(x86::dl);
-	c.lea(x86::r10, x86::qword_ptr(state, STATE_OFFS(index)));
+	c.mov(x86::r10d, x86::dword_ptr(state, STATE_OFFS(index)));
+	c.lea(x86::r10, x86::dword_ptr(state, x86::r10, 0, STATE_OFFS(memBase)));
 	c.mov(x86::byte_ptr(x86::r10, 0), x86::al);
 	c.shr(x86::eax, 8); // Move back reminder
 	c.mov(x86::dl, 10);
@@ -553,7 +560,7 @@ DECLARE(asm_insts::STR) = build_instruction([](X86Assembler& c)
 	c.mov(x86::r10, x86::rdi);
 	c.mov(x86::ecx, x86::edx);
 	c.mov(x86::edi, x86::dword_ptr(x86::r8, STATE_OFFS(index)));
-	c.lea(x86::rdi, x86::qword_ptr(x86::r8, x86::rdi, 0, STATE_OFFS(vmMemory)));
+	c.lea(x86::rdi, x86::qword_ptr(x86::r8, x86::rdi, 0, STATE_OFFS(memBase)));
 	c.lea(x86::rsi, x86::qword_ptr(x86::r8, STATE_OFFS(gpr)));
 	c.rep().movsb();
 	c.mov(x86::rcx, x86::r8);
@@ -569,7 +576,7 @@ DECLARE(asm_insts::LDR) = build_instruction([](X86Assembler& c)
 	c.mov(x86::r10, x86::rdi);
 	c.mov(x86::ecx, x86::edx);
 	c.mov(x86::esi, x86::dword_ptr(x86::r8, STATE_OFFS(index)));
-	c.lea(x86::rsi, x86::qword_ptr(x86::r8, x86::rsi, 0, STATE_OFFS(vmMemory)));
+	c.lea(x86::rsi, x86::qword_ptr(x86::r8, x86::rsi, 0, STATE_OFFS(memBase)));
 	c.lea(x86::rdi, x86::qword_ptr(x86::r8, STATE_OFFS(gpr)));
 	c.rep().movsb();
 	c.mov(x86::rcx, x86::r8);
@@ -584,8 +591,23 @@ DECLARE(asm_insts::UNK) = build_instruction([](X86Assembler& c)
 	c.ret();
 });
 
+DECLARE(asm_insts::guard) = build_instruction<true>([](X86Assembler& c)
+{
+	Label ok = c.newLabel();
+	c.cmp(pc.r16(), 0x1000);
+
+#ifndef DEBUG_INSTS
+	//TODO: logging of such event
+	c.je(ok);
+#endif
+	c.jmp(imm_ptr(&asm_insts::UNK));
+
+	// Reset pc
+	c.bind(ok);
+	c.xor_(pc.r32(), pc.r32());
+});
+
 #undef DECLARE
 #undef STATE_OFFS
 #undef DEBUG_INSTS
-#undef FALLBACK
 #undef STACK_RESERVE

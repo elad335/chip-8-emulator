@@ -6,10 +6,12 @@
 struct asm_insts
 {
 public:
-	// Entry function
-	static void(*entry)(void* /*state*/);
+	friend struct emu_state_t;
 
-	using func_t = void(*)(void* /*state*/, u16 /*opcode*/);
+	// Entry function
+	static void(*entry)(emu_state_t* /*state*/);
+
+	using func_t = void(*)(emu_state_t* /*state*/, u16 /*opcode*/);
 
 	static func_t RET;
 	static func_t CLS;
@@ -46,6 +48,7 @@ public:
 	static func_t STR;
 	static func_t LDR;
 	static func_t UNK;
+	static func_t guard;
 };
 
 static_assert(sizeof(asm_insts::func_t) == 8);

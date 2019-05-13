@@ -15,6 +15,7 @@
 #include <fstream>
 #include <immintrin.h>
 #include <functional>
+#include <type_traits>
 
 #include "Windows.h"
 #undef min // Workaround for asmjit compilation (using std::min)

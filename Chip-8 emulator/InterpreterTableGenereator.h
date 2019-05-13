@@ -320,4 +320,6 @@ static void genTable(typename Ops::func_t* table)
 
 		table[op] = Ops::UNK;
 	}
+
+	table[0xFFFF] = Ops::guard;
 };
