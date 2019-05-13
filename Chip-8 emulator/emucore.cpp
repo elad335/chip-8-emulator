@@ -1,11 +1,9 @@
-#pragma once
-
 #include "input.h"
 #include "emucore.h"
 
 emu_state_t g_state;
 
-static u8 fontset[80] =
+static const u8 fontset[80] =
 { 
 	0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
 	0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -27,36 +25,36 @@ static u8 fontset[80] =
 
 void emu_state_t::reset()
 {
-	std::memset(vmMemory, 0xAA, sizeof(vmMemory));
-	std::memcpy(vmMemory, fontset, sizeof(fontset));
+	std::memset(memBase, 0xAA, sizeof(memBase));
+	std::memcpy(memBase, fontset, sizeof(fontset));
 	std::memset(gfxMemory, 0, sizeof(gfxMemory));
 	std::memset(gpr, 0, sizeof(gpr));
 	std::memset(stack, 0, sizeof(stack));
+	this->ref<u16>(4096) = 0xFFFF; // Instruction flow guard
 	sp = 0;
 	pc = 0x200;
 	index = 0;
 	timers.store({});
-	_mm_mfence();
 }
 
-static u8& getVF()
+u8& emu_state_t::getVF()
 {
 	// The 15 register
-	return g_state.gpr[0xF];
+	return gpr[0xF];
 }
 
-// Execute one instruction for fallback (slower)
+// Execute one instruction for fallback (debugging only)
 void emu_state_t::OpcodeFallback()
 {
 	// Procced normally
-	auto Procceed = [this](const bool jump = false)
+	const auto Procceed = [this](const bool jump = false)
 	{
 		if (!jump) pc += 2;
 		std::this_thread::yield();
 	};
 
 	// Big Endian architecture, swap bytes
-	const u16 opcode = vm::read<be_t<u16>>(pc);
+	const u16 opcode = this->read<be_t<u16>>(pc);
 
 	switch (getField<3>(opcode))
 	{
@@ -347,7 +345,7 @@ void emu_state_t::OpcodeFallback()
 		u8* vbuffer = gfxMemory + (gpr[reg] & 0x3f) + ((gpr[reg2] & 0x1f) * 32);
 
 		// Get the start of the sprite in ram
-		u8* src = vm::ptr<u8>(index);
+		u8* src = this->ptr<u8>(index);
 
 		// Packed row of pixels
 		u8 pvalue;
@@ -390,9 +388,6 @@ void emu_state_t::OpcodeFallback()
 				}
 			}
 		}
-
-		// Stores must be visible to all threads after this instruction 
-		_mm_sfence();
 
 		return Procceed();
 	}
@@ -499,51 +494,50 @@ void emu_state_t::OpcodeFallback()
 		case 0x33:
 		{
 			// Convert register view to decimal and store it in memory
-			struct decimal_t
-			{
-				u8 i[3];
-			};
-
 			const u8 rvalue = gpr[getField<2>(opcode)];
-			auto out = vm::ref<decimal_t>(index);
+			auto& out = this->ref<u8[]>(index);
 
 			// Try to extract the first digit using optimized path
 			// Knowing it can only be 2,1,0
-			if (rvalue >= 200)
+			if (rvalue < 200)
 			{
-				out.i[0] = 2;
-			}
-			else if (rvalue >= 100)
-			{
-				out.i[0] = 1;
+				out[0] = rvalue < 100 ? 0 : 1;
 			}
 			else
 			{
-				out.i[0] = 0;
+				out[0] = 2;
 			}
 
-			out.i[1] = (rvalue % 100) / 10;
-			out.i[2] = rvalue % 10;
+			out[1] = (rvalue % 100) / 10;
+			out[2] = rvalue % 10;
 			return Procceed();
 		}
 		case 0x55:
 		{
 			// Reg array store 
 			const u8 max_reg = getField<2>(opcode);
-			std::memcpy(vm::ptr<u8>(index), &gpr[0], max_reg);
+			std::memcpy(this->ptr<u8>(index), &gpr[0], max_reg);
 			return Procceed();
 		}
 		case 0x65:
 		{
 			// Reg array load
 			const u8 max_reg = getField<2>(opcode);
-			std::memcpy(&gpr[0], vm::ptr<u8>(index), max_reg);
+			std::memcpy(&gpr[0], this->ptr<u8>(index), max_reg);
 			return Procceed();
 		}
 		default: break;
 		}
 		break;
 	}
+	}
+
+	if (opcode == 0xFFFF && pc == 0x1000)
+	{
+		// Handle potential instruction address overflow
+		// TODO: logging of such event
+		pc = 0x0;
+		return;
 	}
 
 	emu_flags |= emu_flag::illegal_operation;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "utils.h"
-#include "ASMJIT/AsmInterpreter.h"
 
 struct alignas(2) time_control_t
 {
@@ -14,13 +13,12 @@ enum emu_flag : u32
 	clear_screan = (1 << 0),
 	display_update = (1 << 1),
 	illegal_operation = (1 << 2),
-	fallback = (1 << 3) // Opcode fallback requested
 };
 
 struct emu_state_t
 {
-	// The RAM
-	alignas(16) u8 vmMemory[4096];
+	// The RAM (4k + instruction flow guard)
+	alignas(16) u8 memBase[4096 + 2];
 	// Video memory (64*32 pixels)
 	alignas(32) u8 gfxMemory[2048];
 	// Registers
@@ -38,42 +36,41 @@ struct emu_state_t
 	// Set to reflect certian emu conditions
 	u32 emu_flags = {};
 	// Asmjit/Interpreter: function table
-	std::array<void(*)(void*, u16), UINT16_MAX + 1> ops;
+	std::array<void(*)(emu_state_t*, u16), UINT16_MAX + 1> ops;
 	// Opcodes simple fallbacks
 	void OpcodeFallback();
 	// Reset registers
 	void reset();
-};
+	// VF reference wrapper
+	u8& getVF();
 
-extern emu_state_t g_state;
-
-// Emulated CPU memory manager
-namespace vm
-{
+	// Emulated CPU memory control
 	template<typename T>
 	void write(u32 addr, T value)
 	{
-		*reinterpret_cast<T*>(g_state.vmMemory + addr) = value;
+		*reinterpret_cast<std::remove_const_t<T>*>(memBase + addr) = value;
 	}
 
 	template<typename T>
 	T read(u32 addr)
 	{
-		return *reinterpret_cast<T*>(g_state.vmMemory + addr);
+		return *reinterpret_cast<const T*>(memBase + addr);
 	}
 
 	template<typename T>
 	T& ref(u32 addr)
 	{
-		return *reinterpret_cast<T*>(g_state.vmMemory + addr);
+		return *reinterpret_cast<T*>(memBase + addr);
 	}
 
 	template<typename T>
 	T* ptr(u32 addr)
 	{
-		return reinterpret_cast<T*>(g_state.vmMemory + addr);
+		return reinterpret_cast<T*>(memBase + addr);
 	}
 };
+
+extern emu_state_t g_state;
 
 template<size_t _index, bool is_be = false>
 inline u8 getField(u16 opcode)

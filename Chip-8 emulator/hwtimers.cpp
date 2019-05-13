@@ -21,7 +21,7 @@ void timerJob()
 			{
 				--state.delay;
 
-				if (state.sound && --state.sound == 0)
+				if (state.sound && state.sound-- != 0)
 				{
 					result = true;
 				}
@@ -31,7 +31,7 @@ void timerJob()
 			
 			if (state.sound)
 			{
-				if (--state.sound == 0)
+				if (state.sound-- != 0)
 				{
 					result = true;
 				}

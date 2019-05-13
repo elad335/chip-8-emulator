@@ -13,18 +13,19 @@
 
 int main()
 {
-	g_state.reset();
 	genTable<asm_insts>(&g_state.ops[0]);
+	g_state.reset();
 
+	do
 	{
-		std::ifstream file("../pong.rom", std::ifstream::binary);
-
-		static auto failure = [&]()
+		static const auto failure = []()
 		{
 			std::printf("Failure opening binary file!");
 			std::this_thread::sleep_for(std::chrono::seconds(5));
 			return 0;
 		};
+
+		std::ifstream file("../pong.rom", std::ifstream::binary);
 
 		if (!file) 
 		{
@@ -42,44 +43,36 @@ int main()
 			return failure();
 		}
 
-		file.read(vm::ptr<char>(0x200), length);
-		file.close();
+		file.read(g_state.ptr<char>(0x200), length);
 	}
+	while (0);
 
 	std::thread hwTimers(timerJob);
 
 	while (true)
 	{
-		asm_insts::entry((void*)&g_state);
+		asm_insts::entry(&g_state);
 
-		check_label: // I can put here a loop instead but it's uglier
- 
 		switch (g_state.emu_flags)
 		{
-		case emu_flag::fallback:
-		{
-			g_state.emu_flags &= ~emu_flag::fallback;
-			g_state.OpcodeFallback();
-
-			if (g_state.emu_flags)
-			{
-				goto check_label; // Intrunction can change flags, recheck
-			}
-
-			continue;
-		}
 		case emu_flag::display_update:
 		{
 			// TODO
 			system("Cls");
+			static char buf[sizeof(emu_state_t::gfxMemory) + 32];
+
 			for (u32 i = 0; i < 32; i++)
 			{
 				for (u32 j = 0; j < 64; j++)
 				{
-					printf(g_state.gfxMemory[i * 64 + j] != 0 ? "{}" : " ");
+					buf[i * 65 + j] = (g_state.gfxMemory[i * 64 + j] != 0 ? '0' : ' ');
 				}
-				printf("\n");
+
+				buf[i * 65 + 64] = '\n';
 			}
+
+			buf[65 * 31 + 64] = '\0';
+			printf(+buf);
 
 			g_state.emu_flags &= ~emu_flag::display_update;
 			continue;
