@@ -31,7 +31,13 @@ static std::array<const X86Gp, 4> args =
 
 #define DECLARE(...) decltype(__VA_ARGS__) __VA_ARGS__
 #define STATE_OFFS(member) ::offset32(&emu_state_t::member)
-#define STACK_RESERVE 40u // TODO: Comnsider moving to asmjit entry
+#define STACK_RESERVE (40u)
+
+// Addressing helpers:
+// Get offset shift by type (size must be 1, 2, 4, or 8)
+#define GET_SHIFT(x) (::flog2<u32, sizeof(x)>())
+#define GET_SHIFT_ARR(x) (::flog2<u32, sizeof(std::remove_extent_t<decltype(x)>)>())
+#define GET_SHIFT_MEMBER(x) (GET_SHIFT_ARR(emu_state_t::##x)) 
 //#define get_u256 x86::yword_ptr
 //#define get_u128 x86::oword_ptr
 //#define get_u64 x86::qword_ptr
@@ -106,7 +112,7 @@ static asm_insts::func_t build_instruction(F&& func)
 
 		c.mov(args[1].r16(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
 		c.xchg(x86::dl, x86::dh); // This can be optimized with some changes
-		c.jmp(x86::qword_ptr(state, args[1], 3, STATE_OFFS(ops)));
+		c.jmp(x86::qword_ptr(state, args[1], GET_SHIFT_MEMBER(ops), STATE_OFFS(ops)));
 	});
 }
 
@@ -117,7 +123,7 @@ DECLARE(asm_insts::entry) = build_function_asm<decltype(asm_insts::entry)>([](X8
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc))); // Load pc
 	c.movzx(args[1].r32(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
 	c.xchg(x86::dl, x86::dh); // This can be optimized with some changes
-	c.jmp(x86::qword_ptr(state, args[1], 3, STATE_OFFS(ops)));
+	c.jmp(x86::qword_ptr(state, args[1], GET_SHIFT_MEMBER(ops), STATE_OFFS(ops)));
 });
 
 DECLARE(asm_insts::RET) = build_instruction<true>([](X86Assembler& c)
@@ -133,7 +139,7 @@ DECLARE(asm_insts::RET) = build_instruction<true>([](X86Assembler& c)
 #endif
 
 	c.mov(x86::dword_ptr(state, STATE_OFFS(sp)), x86::r8d);
-	c.mov(pc.r32(), x86::dword_ptr(state, x86::r8, 2, STATE_OFFS(stack)));
+	c.mov(pc.r32(), x86::dword_ptr(state, x86::r8, GET_SHIFT_MEMBER(stack), STATE_OFFS(stack)));
 });
 
 DECLARE(asm_insts::CLS) = build_instruction<true>([](X86Assembler& c)
@@ -202,7 +208,7 @@ DECLARE(asm_insts::CALL) = build_instruction<true>([](X86Assembler& c)
 	c.bind(ok);
 #endif
 
-	c.mov(x86::dword_ptr(state, x86::r8, 2, STATE_OFFS(stack)), pc.r32());
+	c.mov(x86::dword_ptr(state, x86::r8, GET_SHIFT_MEMBER(stack), STATE_OFFS(stack)), pc.r32());
 	c.add(x86::r8d, 1);
 	c.mov(x86::dword_ptr(state, STATE_OFFS(sp)), x86::r8d);
 	c.mov(pc.r32(), opcode.r32());
@@ -233,7 +239,7 @@ DECLARE(asm_insts::SE) = build_instruction<true>([](X86Assembler& c)
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sete(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, 1, 2)); // pc += (equal ? 2 : 0) + 2
+	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2)); // pc += (equal ? 2 : 0) + 2
 });
 
 DECLARE(asm_insts::WRI) = build_instruction([](X86Assembler& c)
@@ -337,7 +343,7 @@ DECLARE(asm_insts::SNE) = build_instruction<true>([](X86Assembler& c)
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.setne(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, 1, 2)); // pc += (nequal ? 2 : 0) + 2
+	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2)); // pc += (nequal ? 2 : 0) + 2
 });
 
 DECLARE(asm_insts::SetIndex) = build_instruction([](X86Assembler& c)
@@ -445,7 +451,7 @@ DECLARE(asm_insts::SKP) = build_instruction<true>([](X86Assembler& c)
 	c.mov(state, imm_ptr(&g_state));
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 	c.sete(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, 1, 2));
+	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2));
 });
 
 DECLARE(asm_insts::SKNP) = build_instruction<true>([](X86Assembler& c)
@@ -459,7 +465,7 @@ DECLARE(asm_insts::SKNP) = build_instruction<true>([](X86Assembler& c)
 	c.mov(state, imm_ptr(&g_state));
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 	c.sete(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, 1, 2));
+	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2));
 });
 
 DECLARE(asm_insts::GetD) = build_instruction([](X86Assembler& c)
@@ -595,3 +601,6 @@ DECLARE(asm_insts::guard) = build_instruction<true>([](X86Assembler& c)
 #undef STATE_OFFS
 #undef DEBUG_INSTS
 #undef STACK_RESERVE
+#undef GET_SHIFT
+#undef GET_SHIFT_ARR
+#undef GET_SHIFT_MEMBER
