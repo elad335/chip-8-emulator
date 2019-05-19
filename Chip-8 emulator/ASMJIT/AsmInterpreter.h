@@ -6,12 +6,11 @@
 struct asm_insts
 {
 public:
-	friend struct emu_state_t;
-
 	// Entry function
-	static void(*entry)(emu_state_t* /*state*/);
+	static void(*entry)();
 
-	using func_t = void(*)(emu_state_t* /*state*/, u16 /*opcode*/);
+	// Min address sized type
+	using func_t = std::uintptr_t;
 
 	static func_t RET;
 	static func_t CLS;
@@ -50,5 +49,3 @@ public:
 	static func_t UNK;
 	static func_t guard;
 };
-
-static_assert(sizeof(asm_insts::func_t) == 8);

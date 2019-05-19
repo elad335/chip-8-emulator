@@ -2,11 +2,13 @@
 #include "utils.h"
 #include "emucore.h"
 
-template<typename Ops>
-static void genTable(typename Ops::func_t* table)
+template<typename Ops, typename T, std::size_t N>
+static void genTable(std::array<T, N>& table)
 {
+	static_assert(N == UINT16_MAX + 1);
+
 	// Fill table with all opcodes possible (Ops must contain all of them)
-	for (u32 op = 0; op < UINT16_MAX + 1; op++)
+	for (u32 op = 0; op < N; op++)
 	{
 		switch (getField<3>(op))
 		{

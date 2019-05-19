@@ -36,7 +36,7 @@ struct emu_state_t
 	// Set to reflect certian emu conditions
 	u32 emu_flags = {};
 	// Asmjit/Interpreter: function table
-	std::array<void(*)(emu_state_t*, u16), UINT16_MAX + 1> ops;
+	std::array<std::uintptr_t, UINT16_MAX + 1> ops;
 	// Opcodes simple fallbacks
 	void OpcodeFallback();
 	// Reset registers
@@ -73,7 +73,7 @@ struct emu_state_t
 extern emu_state_t g_state;
 
 template<size_t _index, bool is_be = false>
-inline u8 getField(u16 opcode)
+static inline u8 getField(u16 opcode)
 {
 	// Byteswap fields if specified
 	constexpr size_t index = _index ^ (is_be ? 2 : 0);
