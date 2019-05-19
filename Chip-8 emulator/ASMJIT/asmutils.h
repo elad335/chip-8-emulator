@@ -22,8 +22,9 @@ static FT build_function_asm(F&& builder)
 	CodeHolder code;
 	code.init(g_rt.getCodeInfo());
 
-	// Code alignment optimization enabled
-	code._globalHints = asmjit::CodeEmitter::kHintOptimizedAlign;
+	// Generate optimized alignment padding code at the cost of address portabilty
+	// Unused at the moment
+	//code._globalHints = asmjit::CodeEmitter::kHintOptimizedAlign;
 
 	X86Assembler compiler(&code);
 	builder(std::ref(compiler));
@@ -32,7 +33,7 @@ static FT build_function_asm(F&& builder)
 
 	if (g_rt.add(&result, &code))
 	{
-		return nullptr;
+		return {};
 	}
 
 	return result;

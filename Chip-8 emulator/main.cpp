@@ -13,7 +13,7 @@
 
 int main()
 {
-	genTable<asm_insts>(&g_state.ops[0]);
+	genTable<asm_insts>(g_state.ops);
 	g_state.reset();
 
 	do
@@ -51,7 +51,7 @@ int main()
 
 	while (true)
 	{
-		asm_insts::entry(&g_state);
+		asm_insts::entry();
 
 		switch (g_state.emu_flags)
 		{
