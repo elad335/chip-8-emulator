@@ -36,7 +36,7 @@ struct emu_state_t
 	// Set to reflect certian emu conditions
 	u32 emu_flags = {};
 	// Asmjit/Interpreter: function table
-	std::array<std::uintptr_t, UINT16_MAX + 1> ops;
+	std::uintptr_t ops[UINT16_MAX + 1];
 	// Opcodes simple fallbacks
 	void OpcodeFallback();
 	// Reset registers

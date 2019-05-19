@@ -271,3 +271,72 @@ static bool has_avx()
 	static const bool g_value = get_cpuid(0, 0)[0] >= 0x1 && get_cpuid(1, 0)[2] & 0x10000000 && (get_cpuid(1, 0)[2] & 0x0C000000) == 0x0C000000 && (get_xgetbv(0) & 0x6) == 0x6;
 	return g_value;
 }
+
+// Bit scanning utils
+static inline u32 cntlz32(u32 arg, bool nonzero = false)
+{
+	unsigned long res;
+	return _BitScanReverse(&res, arg) || nonzero ? res ^ 31 : 32;
+}
+
+static inline u64 cntlz64(u64 arg, bool nonzero = false)
+{
+	unsigned long res;
+	return _BitScanReverse64(&res, arg) || nonzero ? res ^ 63 : 64;
+}
+
+static inline u32 cnttz32(u32 arg, bool nonzero = false)
+{
+	unsigned long res;
+	return _BitScanForward(&res, arg) || nonzero ? res : 32;
+}
+
+static inline u64 cnttz64(u64 arg, bool nonzero = false)
+{
+	unsigned long res;
+	return _BitScanForward64(&res, arg) || nonzero ? res : 64;
+}
+
+// Lightweight log2 functions (doesnt use floating point)
+static inline u32 flog2(u32 value) // Floor log2
+{
+	return value <= 1 ? 0 : ::cntlz32(value, true) ^ 31;
+}
+
+static inline u32 clog2(u32 value) // Ceil log2
+{
+	return value <= 1 ? 0 : ::cntlz32((value - 1) << 1, true) ^ 31;
+}
+
+// Constexpr log2 varients (<3)
+template<typename T, T value>
+static inline constexpr T flog2()
+{
+	std::make_unsigned_t<T> value_ = static_cast<std::make_unsigned_t<T>>(value);
+
+	for (size_t i = (sizeof(T) * 8) - 1; i >= 0; i--, value_ <<= 1)
+	{
+		if (value_ & (static_cast<std::make_unsigned_t<T>>(std::numeric_limits<std::make_signed_t<T>>::min())))
+		{
+			return i;
+		}
+	}
+
+	return 0;
+}
+
+template<typename T, T value>
+static inline constexpr T clog2()
+{
+	std::make_unsigned_t<T> value_ = static_cast<std::make_unsigned_t<T>>(value);
+
+	for (size_t i = (sizeof(T) * 8) - 1; i >= 0; i--, value_ <<= 1)
+	{
+		if (value_ & (static_cast<std::make_unsigned_t<T>>(std::numeric_limits<std::make_signed_t<T>>::min())))
+		{
+			return i + T(value_ & static_cast<std::make_unsigned_t<T>>(std::numeric_limits<std::make_signed_t<T>>::max()) != 0);
+		}
+	}
+
+	return 0;
+}

@@ -3,7 +3,7 @@
 #include "emucore.h"
 
 template<typename Ops, typename T, std::size_t N>
-static void genTable(std::array<T, N>& table)
+static void genTable(T(&table)[N])
 {
 	static_assert(N == UINT16_MAX + 1);
 
