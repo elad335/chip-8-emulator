@@ -110,8 +110,16 @@ static asm_insts::func_t build_instruction(F&& func)
 			c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 		}
 
-		c.mov(args[1].r16(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
-		c.xchg(x86::dl, x86::dh); // This can be optimized with some changes
+		if (::has_movbe())
+		{
+			c.movbe(args[1].r16(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
+		}
+		else
+		{
+			c.mov(args[1].r16(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
+			c.xchg(x86::dl, x86::dh); // Byteswap
+		}
+
 		c.jmp(x86::qword_ptr(state, args[1], GET_SHIFT_MEMBER(ops), STATE_OFFS(ops)));
 	});
 }
@@ -122,7 +130,7 @@ DECLARE(asm_insts::entry) = build_function_asm<decltype(asm_insts::entry)>([](X8
 	c.mov(state, imm_ptr(&g_state)); // TODO: Don't hardocde this, supply this by a template argument
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc))); // Load pc
 	c.movzx(args[1].r32(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
-	c.xchg(x86::dl, x86::dh); // This can be optimized with some changes
+	c.xchg(x86::dl, x86::dh); // Byteswap
 	c.jmp(x86::qword_ptr(state, args[1], GET_SHIFT_MEMBER(ops), STATE_OFFS(ops)));
 });
 
