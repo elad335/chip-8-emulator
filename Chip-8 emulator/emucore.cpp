@@ -266,7 +266,7 @@ void emu_state_t::OpcodeFallback()
 
 			// Set sign as VF
 			if (reg == 15) __debugbreak();
-			getVF() = (u8)(result >> 15);
+			getVF() = (u8)(result >> 15) ^ 1;
 			gpr[reg] = (u8)result;
 			return Procceed();
 		}
