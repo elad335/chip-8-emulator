@@ -230,7 +230,7 @@ struct be_t<u64>
 
 // This returns relative offset of member class from 'this'
 template <typename T, typename T2>
-inline u32 offset32(T T2::*const mptr)
+static inline u32 offset32(T T2::*const mptr)
 {
 #ifdef _MSC_VER
 	static_assert(sizeof(mptr) == sizeof(u32), "Invalid pointer-to-member size");

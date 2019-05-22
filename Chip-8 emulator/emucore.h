@@ -19,8 +19,8 @@ struct emu_state_t
 {
 	// The RAM (4k + instruction flow guard)
 	alignas(16) u8 memBase[4096 + 2];
-	// Video memory (64*32 pixels)
-	alignas(32) u8 gfxMemory[2048];
+	// Video memory (64*32 pixels, see DRW for details)
+	alignas(32) u8 gfxMemory[64 * 32 * 2];
 	// Registers
 	u8 gpr[16];
 	// Stack
@@ -43,6 +43,11 @@ struct emu_state_t
 	void reset();
 	// VF reference wrapper
 	u8& getVF();
+
+	// Framebuffer swizzling constants
+	static constexpr size_t y_shift = 128;
+	static constexpr size_t x_shift = 1;
+	static constexpr size_t xy_mask = (0x1fu * y_shift) | (0x3fu * x_shift);
 
 	// Emulated CPU memory control
 	template<typename T>

@@ -337,15 +337,25 @@ void emu_state_t::OpcodeFallback()
 	case 0xD:
 	{
 		// DRW: Draw call sprite
-		const u8 reg = getField<2>(opcode);
-		const u8 reg2 = getField<1>(opcode);
+		//NOTE: framebuffer layout: swizzled buffer
+		// offset 15 bits long : [1bit cleared][5 bits y][1bit cleared][6 bits x]
+
+		//const u8 reg = getField<2>(opcode);
+		//const u8 reg2 = getField<1>(opcode);
 		const u8 size = getField<0>(opcode);
 
 		// Get the start of sprite location in vram
-		u8* vbuffer = gfxMemory + (gpr[reg] & 0x3f) + ((gpr[reg2] & 0x1f) * 32);
+		size_t offset = (gpr[getField<2>(opcode)] & 0x3f) + ((gpr[getField<1>(opcode)] & 0x1f) * y_shift);
+
+#ifdef  DEBUG_INSTS
+		if ((gpr[getField<2>(opcode)] & ~0x3f) || (gpr[getField<1>(opcode)] & ~0x1f))
+		{
+			hwBpx();
+		}
+#endif
 
 		// Get the start of the sprite in ram
-		u8* src = this->ptr<u8>(index);
+		auto& src = this->ref<u8[]>(index);
 
 		// Packed row of pixels
 		u8 pvalue;
@@ -355,40 +365,41 @@ void emu_state_t::OpcodeFallback()
 
 		//NOTE: This draws in XOR mode! - meaning the pixel color is flipped anytime any bit is 1
 
-		for (u32 row = 0; row < size; row++)
+		for (u32 row = 0; row < size; row++, offset += y_shift)
 		{
-			pvalue = *(src + row);
+			pvalue = src[row];
 
 			if (pvalue)
 			{
-				// Update the screen in case any pixel is flipped
-				emu_flags |= emu_flag::display_update;
-
 				// Unpack bits into pixels
-				for (u32 i = 0; i < 8; i++)
+				for (u32 i = 0; i < 8; i++, offset++)
 				{
-					// Trick: substruct from 0 to obtain grayscale
-					const u8 pixel = 0u - ((pvalue >> i) & 0x1);
-
-					// Obtain pointer to the pixel dst
-					auto ptr = vbuffer + i + (row * 64);
-
-					// Perform tests related to its color
-					if (pixel)
+					// Do nothing if zero
+					if ((pvalue >> (7 - i)) & 0x1)
 					{
-						if (*ptr != 0)
+						// Wrap around x and y axis
+						offset &= xy_mask;
+
+						// Obtain pointer to the pixel dst
+						auto& pix = gfxMemory[offset];
+
+						if (pix != 0)
 						{
 							// Pixel unset
 							getVF() = 1;
 						}
 
 						// Update pixel
-						*ptr ^= pixel;
+						pix ^= 0xff;
 					}
 				}
+
+				offset -= 8;
 			}
 		}
 
+		// Update the screen
+		emu_flags |= emu_flag::display_update;
 		return Procceed();
 	}
 	case 0xE:

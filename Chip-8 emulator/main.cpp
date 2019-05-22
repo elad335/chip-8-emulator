@@ -13,7 +13,7 @@
 #include <filesystem>
 
 namespace fs = std::filesystem;
-static wchar_t display_buf[sizeof(emu_state_t::gfxMemory) + 32]{};
+static wchar_t display_buf[32 * 65]{};
 
 static std::wstring ChooseExecutable()
 {
@@ -163,7 +163,7 @@ int main()
 			{
 				for (u32 j = 0; j < 64; j++)
 				{
-					display_buf[i * 65 + j] = (g_state.gfxMemory[i * 64 + j] != 0 ? '0' : ' ');
+					display_buf[i * 65 + j] = (g_state.gfxMemory[i * emu_state_t::y_shift + j] != 0 ? '0' : ' ');
 				}
 
 				display_buf[i * 65 + 64] = '\n';

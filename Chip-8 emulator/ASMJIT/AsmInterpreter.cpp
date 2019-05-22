@@ -176,13 +176,13 @@ DECLARE(asm_insts::CLS) = build_instruction<true>([](X86Assembler& c)
 	{
 		if (size_ == 256)
 		{
-			c.vmovaps(x86::yword_ptr(x86::r9, i * 64 + 0), x86::ymm0);
-			c.vmovaps(x86::yword_ptr(x86::r9, i * 64 + 32), x86::ymm1);
+			c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state_t::y_shift + 0), x86::ymm0);
+			c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state_t::y_shift + 32), x86::ymm1);
 		}
 		else
 		{
-			c.movaps(x86::oword_ptr(x86::r9, i * 32 + 0), x86::xmm0);
-			c.movaps(x86::oword_ptr(x86::r9, i * 32 + 16), x86::xmm1);
+			c.movaps(x86::oword_ptr(x86::r9, (((i & 0xfe) << 1) | i & 1) * (emu_state_t::y_shift / 2) + 0), x86::xmm0);
+			c.movaps(x86::oword_ptr(x86::r9, (((i & 0xfe) << 1) | i & 1) * (emu_state_t::y_shift / 2) + 16), x86::xmm1);
 		}
 	}
 
@@ -391,21 +391,19 @@ DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
 	getField<1>(c, x86::r9);
 	c.mov(x86::r9b, x86::byte_ptr(state, x86::r9, 0, STATE_OFFS(gpr)));
 	c.and_(x86::r9b, 0x1f);
-	c.shl(x86::r9d, 5);
+	c.shl(x86::r9d, flog2<u32, emu_state_t::y_shift>());
 	getField<2>(c, x86::r10);
 	c.mov(x86::r10b, x86::byte_ptr(state, x86::r10, 0, STATE_OFFS(gpr)));
 	c.and_(x86::r10b, 0x3f);
 
-	// Vram pointer
+	// Vram offset
 	c.add(x86::r9d, x86::r10d);
-	c.lea(x86::r9, x86::qword_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory)));
 
 	// Increment pc as we are about to return
 	c.add(pc.r32(), 2);
 
 	getField<0>(c, opcode);
-	c.test(x86::edx, x86::edx); // Skip if zero
-	c.je(skip2);
+	c.je(skip2); // Skip if zero (flags set in getField)
 
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32()); // Store pc, free rax
 
@@ -426,16 +424,17 @@ DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
 	for (u32 i = 0; i < 8; i++)
 	{
 		Label next = c.newLabel();
-		c.bt(x86::r10d, i);
+		c.bt(x86::r10d, 7 - i);
 		c.jnc(next);
-		c.xor_(x86::byte_ptr(x86::r9, i), 0xff);
+		c.and_(x86::r9d, emu_state_t::xy_mask); // Wrap around x and y axis
+		c.xor_(x86::byte_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory) + i), 0xff);
 		c.cmove(x86::r11d, x86::eax); // Set VF
 		c.bind(next);
 	}
 
 	c.bind(skip);
-	c.add(x86::r8, 1);
-	c.add(x86::r9, 64);
+	c.add(x86::r8, emu_state_t::x_shift);
+	c.add(x86::r9, emu_state_t::y_shift);
 	c.cmp(x86::r8, x86::rdx);
 	c.jne(outer);
 
