@@ -64,7 +64,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\pong.rom">
+    <None Include="..\roms\pong.rom">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
