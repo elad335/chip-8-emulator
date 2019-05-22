@@ -333,8 +333,7 @@ DECLARE(asm_insts::RSB) = build_instruction([](X86Assembler& c)
 	c.movzx(x86::r9d, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sub(x86::r9d, x86::r8d);
 	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r9b);
-	c.shr(x86::r8w, 15);
-	c.mov(refVF(), x86::r8b);
+	c.setns(refVF());
 });
 
 DECLARE(asm_insts::SHL) = build_instruction([](X86Assembler& c)
