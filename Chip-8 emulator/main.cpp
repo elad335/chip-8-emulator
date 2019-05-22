@@ -10,6 +10,98 @@
 #include "ASMJIT/AsmInterpreter.h"
 #include <iostream>
 #include <thread>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+static wchar_t display_buf[sizeof(emu_state_t::gfxMemory) + 32]{};
+
+static std::wstring ChooseExecutable()
+{
+	std::vector<std::wstring> files;
+	std::vector<const wchar_t*> names;
+
+	for (auto& e : fs::directory_iterator("../roms/"))
+	{
+		if (e.is_regular_file())
+		{
+			files.emplace_back(e.path().native());
+		}
+	}
+
+	if (files.empty())
+	{
+		return {};
+	}
+
+	// First line to use
+	constexpr u32 line_offset = 2;
+
+	for (const auto& str : files)
+	{
+		size_t index = str.find_last_of('/');
+		names.emplace_back(str.c_str() + index + 1);
+	}
+
+	for (int j = 0; j < 32; j++)
+	{
+		std::wmemset(display_buf + (j * 65), ' ', 64);
+
+		if (j > 1 && j - 2 < names.size())
+		{
+			wcsncpy(display_buf + (j * 65) + 2, names[j - line_offset], 62);
+		}
+
+		display_buf[j * 65 + 64] = '\n';
+	}
+
+	display_buf[31 * 65 + 64] = '\0';
+	display_buf[line_offset * 65] = '>';
+	system("Cls");
+	wprintf(+display_buf);
+
+	constexpr u16 test_bit = 0x8000;
+
+	for (int cur_index = 0;;)
+	{
+		if (::GetKeyState(VK_RETURN) & test_bit)
+		{
+			system("Cls");
+			return std::move(files[cur_index]);
+		}
+
+		bool update = false;
+
+		if (::GetKeyState(VK_UP) & test_bit || ::GetKeyState(0x57) & test_bit)
+		{
+			display_buf[(line_offset + cur_index) * 65] = ' ';
+			update = true;
+			cur_index++;
+			cur_index %= names.size();
+		}
+
+		if (::GetKeyState(VK_DOWN) & test_bit || ::GetKeyState(0x53) & test_bit)
+		{
+			display_buf[(line_offset + cur_index) * 65] = ' ';
+			update = true;
+
+			if (cur_index != 0)
+			{
+				cur_index--;
+			}
+			else
+			{
+				cur_index = names.size() - 1;
+			}
+		}
+
+		if (update)
+		{
+			display_buf[(line_offset + cur_index) * 65] = '>';
+			system("Cls");
+			wprintf(+display_buf);
+		}
+	}
+}
 
 int main()
 {
@@ -25,7 +117,14 @@ int main()
 			return 0;
 		};
 
-		std::ifstream file("../pong.rom", std::ifstream::binary);
+		std::wstring path = ChooseExecutable();
+
+		if (!path.size())
+		{
+			return failure();
+		}
+
+		std::basic_ifstream<u8> file(path.c_str(), std::ifstream::binary);
 
 		if (!file) 
 		{
@@ -43,7 +142,7 @@ int main()
 			return failure();
 		}
 
-		file.read(g_state.ptr<char>(0x200), length);
+		file.read(g_state.ptr<u8>(0x200), length);
 	}
 	while (0);
 
@@ -59,20 +158,19 @@ int main()
 		{
 			// TODO
 			system("Cls");
-			static char buf[sizeof(emu_state_t::gfxMemory) + 32];
 
 			for (u32 i = 0; i < 32; i++)
 			{
 				for (u32 j = 0; j < 64; j++)
 				{
-					buf[i * 65 + j] = (g_state.gfxMemory[i * 64 + j] != 0 ? '0' : ' ');
+					display_buf[i * 65 + j] = (g_state.gfxMemory[i * 64 + j] != 0 ? '0' : ' ');
 				}
 
-				buf[i * 65 + 64] = '\n';
+				display_buf[i * 65 + 64] = '\n';
 			}
 
-			buf[65 * 31 + 64] = '\0';
-			printf(+buf);
+			display_buf[65 * 31 + 64] = '\0';
+			wprintf(+display_buf);
 
 			g_state.emu_flags &= ~emu_flag::display_update;
 			continue;
