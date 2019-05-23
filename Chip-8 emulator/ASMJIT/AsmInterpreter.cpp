@@ -9,7 +9,7 @@ using namespace asmjit;
 //
 static const X86Gp& state = x86::rcx;
 static const X86Gp& opcode = x86::rdx;
-static const X86Gp& pc = x86::rax;
+static const X86Gp& pc = x86::rbp;
 
 // Function arguments on x86-64 windows
 static std::array<const X86Gp, 4> args = 
@@ -103,11 +103,9 @@ static asm_insts::func_t build_instruction(F&& func)
 
 		if (1 /*sleep_supported*/)
 		{
-			c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
 			c.mov(args[0], 16);
 			c.call(imm_ptr((void*)::Sleep));
 			c.mov(state, imm_ptr(&g_state)); // TODO: Don't hardocde this, supply this by a template argument
-			c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 		}
 
 		if (::has_movbe())
@@ -126,7 +124,8 @@ static asm_insts::func_t build_instruction(F&& func)
 
 DECLARE(asm_insts::entry) = build_function_asm<decltype(asm_insts::entry)>([](X86Assembler& c)
 {
-	c.sub(x86::rsp, STACK_RESERVE); // Allocate min stack frame
+	c.sub(x86::rsp, STACK_RESERVE + 8); // Allocate min stack frame
+	c.mov(x86::qword_ptr(x86::rsp, STACK_RESERVE), pc); // Save non-volatile register
 	c.mov(state, imm_ptr(&g_state)); // TODO: Don't hardocde this, supply this by a template argument
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc))); // Load pc
 	c.movzx(args[1].r32(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
@@ -192,7 +191,8 @@ DECLARE(asm_insts::CLS) = build_instruction<true>([](X86Assembler& c)
 	c.add(pc.r32(), 2);
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32()); // Update pc as we cached it in register so far
 	c.or_(x86::dword_ptr(state, STATE_OFFS(emu_flags)), emu_flag::clear_screan);
-	c.add(x86::rsp, STACK_RESERVE);
+	c.mov(pc, x86::qword_ptr(x86::rsp, STACK_RESERVE));
+	c.add(x86::rsp, STACK_RESERVE + 8);
 	c.ret(); // Update the screen and continue
 });
 
@@ -369,13 +369,11 @@ DECLARE(asm_insts::JPr) = build_instruction<true>([](X86Assembler& c)
 
 DECLARE(asm_insts::RND) = build_instruction([](X86Assembler& c)
 {
-	c.mov(x86::r8d, pc.r32()); // Save rdx and rax, RDTSC modifies both
-	c.mov(x86::r9d, opcode.r32());
+	c.mov(x86::r8d, opcode.r32()); // Save rdx
 	c.rdtsc();
-	c.and_(x86::al, x86::r9b); // Mask timestamp
-	getField<2>(c, x86::r9, x86::r9);
-	c.mov(x86::byte_ptr(state, x86::r9, 0, STATE_OFFS(gpr)), x86::al);
-	c.mov(pc.r32(), x86::r8d);
+	c.and_(x86::al, x86::r8b); // Mask timestamp
+	getField<2>(c, x86::r8, x86::r8);
+	c.mov(x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)), x86::al);
 });
 
 DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
@@ -405,11 +403,12 @@ DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
 	getField<0>(c, opcode);
 	c.je(skip2); // Skip if zero (flags set in getField)
 
-	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32()); // Store pc, free rax
+	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32()); // Free pc
+	const X86Gp temp = pc.r32();
 
 	// VF setup
 	c.xor_(x86::r11d, x86::r11d);
-	c.mov(x86::eax, 1);
+	c.mov(temp, 1);
 
 	// Get max ram address
 	c.lea(x86::rdx, x86::qword_ptr(x86::r8, x86::rdx));
@@ -428,7 +427,7 @@ DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
 		c.jnc(next);
 		c.and_(x86::r9d, emu_state_t::xy_mask); // Wrap around x and y axis
 		c.xor_(x86::byte_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory) + i), 0xff);
-		c.cmove(x86::r11d, x86::eax); // Set VF
+		c.cmove(x86::r11d, temp); // Set VF
 		c.bind(next);
 	}
 
@@ -440,7 +439,8 @@ DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
 
 	c.or_(x86::dword_ptr(state, STATE_OFFS(emu_flags)), emu_flag::display_update);
 	c.mov(refVF(), x86::r11b);
-	c.add(x86::rsp, STACK_RESERVE);
+	c.mov(pc, x86::qword_ptr(x86::rsp, STACK_RESERVE));
+	c.add(x86::rsp, STACK_RESERVE + 8);
 	c.ret(); // Update the screen and continue
 	c.bind(skip2);
 	c.mov(refVF(), x86::edx);
@@ -452,10 +452,8 @@ DECLARE(asm_insts::SKP) = build_instruction<true>([](X86Assembler& c)
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::r8, imm_ptr(&input::keyIDs));
-	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
 	c.call(imm_ptr((void*)::GetKeyState));
 	c.mov(state, imm_ptr(&g_state));
-	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 	c.sete(x86::dl);
 	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2));
 });
@@ -466,10 +464,8 @@ DECLARE(asm_insts::SKNP) = build_instruction<true>([](X86Assembler& c)
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::r8, imm_ptr(&input::keyIDs));
-	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
 	c.call(imm_ptr((void*)::GetKeyState));
 	c.mov(state, imm_ptr(&g_state));
-	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 	c.sete(x86::dl);
 	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2));
 });
@@ -483,10 +479,8 @@ DECLARE(asm_insts::GetD) = build_instruction([](X86Assembler& c)
 
 DECLARE(asm_insts::GetK) = build_instruction([](X86Assembler& c)
 {
-	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
 	c.call(imm_ptr((void*)&input::WaitForPress));
 	c.mov(state, imm_ptr(&g_state));
-	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 	getField<2>(c, opcode);
 	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::al);
 });
@@ -516,14 +510,12 @@ DECLARE(asm_insts::AddIndex) = build_instruction([](X86Assembler& c)
 
 DECLARE(asm_insts::SetCh) = build_instruction([](X86Assembler& c)
 {
-	c.mov(x86::r8d, pc.r32());
 	getField<2>(c, opcode);
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::eax, 5);
 	c.mul(x86::edx); // This can also be done with: index = (gpr << 2) + gpr
 	c.mov(x86::dword_ptr(state, STATE_OFFS(index)), x86::eax);
-	c.mov(pc.r32(), x86::r8d);
 });
 
 DECLARE(asm_insts::STD) = build_instruction([](X86Assembler& c)
@@ -531,20 +523,18 @@ DECLARE(asm_insts::STD) = build_instruction([](X86Assembler& c)
 	// div instruction produces both quotient and reminder
 	// Let's make a good use of it
 	getField<2>(c, opcode);
-	c.mov(x86::r8d, pc.r32());
 	c.movzx(x86::eax, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.mov(x86::dl, 100);
 	c.div(x86::dl);
-	c.mov(x86::r10d, x86::dword_ptr(state, STATE_OFFS(index)));
-	c.lea(x86::r10, x86::dword_ptr(state, x86::r10, 0, STATE_OFFS(memBase)));
-	c.mov(x86::byte_ptr(x86::r10, 0), x86::al);
+	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(index)));
+	c.lea(x86::r8, x86::dword_ptr(state, x86::r8, 0, STATE_OFFS(memBase)));
+	c.mov(x86::byte_ptr(x86::r8, 0), x86::al);
 	c.shr(x86::eax, 8); // Move back reminder
 	c.mov(x86::dl, 10);
 	c.div(x86::dl);
-	c.mov(x86::byte_ptr(x86::r10, 1), x86::al);
+	c.mov(x86::byte_ptr(x86::r8, 1), x86::al);
 	c.shr(x86::eax, 8);
-	c.mov(x86::byte_ptr(x86::r10, 2), x86::al);
-	c.mov(pc.r32(), x86::r8d); // Restore pc
+	c.mov(x86::byte_ptr(x86::r8, 2), x86::al);
 });
 
 DECLARE(asm_insts::STR) = build_instruction([](X86Assembler& c)
@@ -583,7 +573,8 @@ DECLARE(asm_insts::UNK) = build_instruction([](X86Assembler& c)
 {
 	c.or_(x86::dword_ptr(state, STATE_OFFS(emu_flags)), emu_flag::illegal_operation);
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
-	c.add(x86::rsp, STACK_RESERVE);
+	c.mov(pc, x86::qword_ptr(x86::rsp, STACK_RESERVE));
+	c.add(x86::rsp, STACK_RESERVE + 8);
 	c.ret();
 });
 
