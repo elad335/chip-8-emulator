@@ -6,6 +6,7 @@
 #include "emucore.h"
 #include "hwtimers.h"
 #include "input.h"
+#include "render.h"
 #include "InterpreterTableGenereator.h"
 #include "ASMJIT/AsmInterpreter.h"
 #include <iostream>
