@@ -11,7 +11,7 @@ static const X86Gp& state = x86::rcx;
 static const X86Gp& opcode = x86::rdx;
 static const X86Gp& pc = x86::rbp;
 
-// Function arguments on x86-64 windows
+// Function arguments on x86-64 Windows
 static std::array<const X86Gp, 4> args = 
 {
 	x86::rcx,
@@ -19,6 +19,9 @@ static std::array<const X86Gp, 4> args =
 	x86::r8,
 	x86::r9
 };
+
+// Default return register on x86-64 Windows
+static const X86Gp& retn = x86::rax;
 
 // Temporaries
 //std::array<X86Gp, 4> tr = 
@@ -44,6 +47,9 @@ static std::array<const X86Gp, 4> args =
 //#define get_u32 x86::dword_ptr
 //#define get_u16 x86::word_ptr
 //#define get_u8 x86::byte_ptr
+
+// TODO (add a setting for it)
+static const bool g_sleep_supported = true;
 
 template <u32 _index, bool is_be = false>
 static void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcode)
@@ -101,7 +107,7 @@ static asm_insts::func_t build_instruction(F&& func)
 			c.add(pc.r32(), 2);
 		}
 
-		if (1 /*sleep_supported*/)
+		if (g_sleep_supported)
 		{
 			c.mov(args[0], 16);
 			c.call(imm_ptr((void*)::Sleep));
@@ -110,11 +116,17 @@ static asm_insts::func_t build_instruction(F&& func)
 
 		if (::has_movbe())
 		{
+			if (g_sleep_supported)
+			{
+				// Clear upper bits of the register in case changed by Sleep
+				c.movzx(args[1].r32(), args[1].r8());
+			}
+
 			c.movbe(args[1].r16(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
 		}
 		else
 		{
-			c.mov(args[1].r16(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
+			c.movzx(args[1].r32(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
 			c.xchg(x86::dl, x86::dh); // Byteswap
 		}
 
@@ -228,7 +240,7 @@ DECLARE(asm_insts::SEi) = build_instruction<true>([](X86Assembler& c)
 	getField<2>(c, opcode);
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sete(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, 1, 2));
+	c.lea(pc, x86::qword_ptr(pc, x86::rdx, 1, 2));
 });
 
 DECLARE(asm_insts::SNEi) = build_instruction<true>([](X86Assembler& c)
@@ -237,7 +249,7 @@ DECLARE(asm_insts::SNEi) = build_instruction<true>([](X86Assembler& c)
 	getField<2>(c, opcode);
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.setne(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, 1, 2));
+	c.lea(pc, x86::qword_ptr(pc, x86::rdx, 1, 2));
 });
 
 DECLARE(asm_insts::SE) = build_instruction<true>([](X86Assembler& c)
@@ -247,7 +259,7 @@ DECLARE(asm_insts::SE) = build_instruction<true>([](X86Assembler& c)
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sete(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2)); // pc += (equal ? 2 : 0) + 2
+	c.lea(pc, x86::qword_ptr(pc, x86::rdx, 1, 2)); // pc += (equal ? 2 : 0) + 2
 });
 
 DECLARE(asm_insts::WRI) = build_instruction([](X86Assembler& c)
@@ -350,7 +362,7 @@ DECLARE(asm_insts::SNE) = build_instruction<true>([](X86Assembler& c)
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.setne(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2)); // pc += (nequal ? 2 : 0) + 2
+	c.lea(pc, x86::qword_ptr(pc, x86::rdx, 1, 2)); // pc += (nequal ? 2 : 0) + 2
 });
 
 DECLARE(asm_insts::SetIndex) = build_instruction([](X86Assembler& c)
@@ -452,10 +464,12 @@ DECLARE(asm_insts::SKP) = build_instruction<true>([](X86Assembler& c)
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::r8, imm_ptr(&input::keyIDs));
+	c.movzx(args[0].r32(), x86::byte_ptr(x86::r8, x86::rdx, 0));
 	c.call(imm_ptr((void*)::GetKeyState));
 	c.mov(state, imm_ptr(&g_state));
-	c.sete(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2));
+	c.shr(retn.r16(), 16 - 1); // If pressed, contains 1 otherwise 0
+	c.movzx(retn.r32(), retn.r8());
+	c.lea(pc, x86::qword_ptr(pc, retn, 1, 2));
 });
 
 DECLARE(asm_insts::SKNP) = build_instruction<true>([](X86Assembler& c)
@@ -464,10 +478,13 @@ DECLARE(asm_insts::SKNP) = build_instruction<true>([](X86Assembler& c)
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::r8, imm_ptr(&input::keyIDs));
+	c.movzx(args[0].r32(), x86::byte_ptr(x86::r8, x86::rdx, 0));
 	c.call(imm_ptr((void*)::GetKeyState));
 	c.mov(state, imm_ptr(&g_state));
-	c.sete(x86::dl);
-	c.lea(pc, x86::qword_ptr(pc, x86::edx, GET_SHIFT(u16), 2));
+	c.shr(retn.r16(), 16 - 1);
+	c.xor_(retn.r8(), 1);
+	c.movzx(retn.r32(), retn.r8());
+	c.lea(pc, x86::qword_ptr(pc, retn, 1, 2));
 });
 
 DECLARE(asm_insts::GetD) = build_instruction([](X86Assembler& c)
@@ -479,10 +496,13 @@ DECLARE(asm_insts::GetD) = build_instruction([](X86Assembler& c)
 
 DECLARE(asm_insts::GetK) = build_instruction([](X86Assembler& c)
 {
+	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
+	c.mov(pc, opcode); // Save rdx
 	c.call(imm_ptr((void*)&input::WaitForPress));
 	c.mov(state, imm_ptr(&g_state));
-	getField<2>(c, opcode);
-	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::al);
+	getField<2>(c, pc, pc);
+	c.mov(x86::byte_ptr(state, pc, 0, STATE_OFFS(gpr)), retn.r8());
+	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 });
 
 DECLARE(asm_insts::SetD) = build_instruction([](X86Assembler& c)
