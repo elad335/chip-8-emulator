@@ -97,3 +97,6 @@ static inline u8 getField(u16 opcode)
 
 	return (opcode >> (index * 4)) & 0xF;
 }
+
+// Logic relies on this
+static_assert(sizeof(std::atomic<time_control_t>) == sizeof(time_control_t) && std::atomic<time_control_t>::is_always_lock_free);

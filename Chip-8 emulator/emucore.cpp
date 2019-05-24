@@ -512,7 +512,7 @@ void emu_state_t::OpcodeFallback()
 			// Knowing it can only be 2,1,0
 			if (rvalue < 200)
 			{
-				out[0] = rvalue < 100 ? 0 : 1;
+				out[0] = u8{!(rvalue < 100)};
 			}
 			else
 			{
