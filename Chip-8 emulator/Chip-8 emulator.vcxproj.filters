@@ -48,6 +48,9 @@
     <ClCompile Include="ASMJIT\asmutils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="render.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="emucore.h">
@@ -60,6 +63,9 @@
       <Filter>Header Files\ASMJIT</Filter>
     </ClInclude>
     <ClInclude Include="InterpreterTableGenereator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="render.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
