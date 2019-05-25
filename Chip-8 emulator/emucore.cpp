@@ -228,7 +228,7 @@ void emu_state_t::OpcodeFallback()
 			const u16 result = (u16)gpr[reg] + (u16)gpr[reg2];
 
 			// Set carry as if greater than max
-			if (reg == 15) __debugbreak();
+			if (reg == 15) hwBpx();
 			getVF() = (u8)(result >> 8);
 			gpr[reg] = (u8)result;
 			return Procceed();
@@ -241,7 +241,7 @@ void emu_state_t::OpcodeFallback()
 			const u16 result = (u16)gpr[reg] - (u16)gpr[reg2];
 
 			// Set sign as VF
-			if (reg == 15) __debugbreak();
+			if (reg == 15) hwBpx();
 			getVF() = (u8)(result >> 15);
 			gpr[reg] = (u8)result;
 			return Procceed();
@@ -252,7 +252,7 @@ void emu_state_t::OpcodeFallback()
 			const u8 reg = getField<2>(opcode);
 			u8 result = gpr[reg];
 
-			if (reg == 15) __debugbreak();
+			if (reg == 15) hwBpx();
 			getVF() = result & 1;
 			gpr[reg] = result >>= 1;
 			return Procceed();
@@ -265,7 +265,7 @@ void emu_state_t::OpcodeFallback()
 			const u16 result = (u16)gpr[reg2] - (u16)gpr[reg];
 
 			// Set sign as VF
-			if (reg == 15) __debugbreak();
+			if (reg == 15) hwBpx();
 			getVF() = (u8)(result >> 15) ^ 1;
 			gpr[reg] = (u8)result;
 			return Procceed();
@@ -283,7 +283,7 @@ void emu_state_t::OpcodeFallback()
 			const u8 reg = getField<2>(opcode);
 			const u8 result = gpr[reg];
 
-			if (reg == 15) __debugbreak();
+			if (reg == 15) hwBpx();
 			getVF() = result >> 7;
 			gpr[reg] = result << 1;
 			return Procceed();
@@ -369,33 +369,37 @@ void emu_state_t::OpcodeFallback()
 		{
 			pvalue = src[row];
 
-			if (pvalue)
+			if (!pvalue)
 			{
-				// Unpack bits into pixels
-				for (u32 i = 0; i < 8; i++, offset++)
+				continue;
+			}
+
+			// Unpack bits into pixels
+			for (u32 i = 0; i < 8; i++, offset++)
+			{
+				// Do nothing if zero
+				if (((pvalue << i) & 0x80) == 0)
 				{
-					// Do nothing if zero
-					if ((pvalue >> (7 - i)) & 0x1)
-					{
-						// Wrap around x and y axis
-						offset &= xy_mask;
-
-						// Obtain pointer to the pixel dst
-						auto& pix = gfxMemory[offset];
-
-						if (pix != 0)
-						{
-							// Pixel unset
-							getVF() = 1;
-						}
-
-						// Update pixel
-						pix ^= 0xff;
-					}
+					continue;
 				}
 
-				offset -= 8;
+				// Wrap around x and y axis
+				offset &= xy_mask;
+
+				// Obtain pointer to the pixel dst
+				auto& pix = gfxMemory[offset];
+
+				if (pix != 0)
+				{
+					// Pixel unset
+					getVF() = 1;
+				}
+
+				// Update pixel
+				pix ^= 0xff;
 			}
+
+			offset -= 8;
 		}
 
 		// Update the screen
@@ -526,15 +530,17 @@ void emu_state_t::OpcodeFallback()
 		case 0x55:
 		{
 			// Reg array store 
-			const u8 max_reg = getField<2>(opcode);
+			const u8 max_reg = getField<2>(opcode) + 1;
 			std::memcpy(this->ptr<u8>(index), &gpr[0], max_reg);
+			index += max_reg;
 			return Procceed();
 		}
 		case 0x65:
 		{
 			// Reg array load
-			const u8 max_reg = getField<2>(opcode);
+			const u8 max_reg = getField<2>(opcode) + 1;
 			std::memcpy(&gpr[0], this->ptr<u8>(index), max_reg);
+			index += max_reg;
 			return Procceed();
 		}
 		default: break;
