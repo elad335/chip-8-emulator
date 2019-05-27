@@ -26,9 +26,6 @@ static const GLfloat s_vertex_buffer_tex_data[] =
 
 void InitWindow()
 {
-	// Hide console
-	ShowWindow(GetConsoleWindow(), SW_HIDE);
-
 	if (!glfwInit())
 	{
 		printf("Failed to initialize GLFW\n");
@@ -37,7 +34,7 @@ void InitWindow()
 	}
 
 	//glfwWindowHint(GLFW_SAMPLES, 4); // 4x antialiasing
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); // We want OpenGL 3.3
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4); // We want OpenGL 4.3
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); // We don't want the old OpenGL 
 
@@ -67,10 +64,13 @@ void InitWindow()
 	glewExperimental = true; // Needed in core profile
 	if (glewInit() != GLEW_OK)
 	{
-		fprintf(stderr, "Failed to initialize GLEW\n");
+		printf("Failed to initialize GLEW\n");
 		hwBpx();
 		return;
 	}
+
+	// Hide console
+	ShowWindow(GetConsoleWindow(), SW_HIDE);
 
 	glGenVertexArrays(1, &sVertexArrayID);
 	glBindVertexArray(sVertexArrayID);
@@ -143,6 +143,7 @@ GLuint LoadShaders(const char* vertex_shader, const char* fragment_shader)
 	{
 		std::vector<char> VertexShaderErrorMessage(InfoLogLength + 1);
 		glGetShaderInfoLog(VertexShaderID, InfoLogLength, NULL, &VertexShaderErrorMessage[0]);
+		ShowWindow(GetConsoleWindow(), SW_SHOW);
 		printf("%s\n", &VertexShaderErrorMessage[0]);
 		hwBpx();
 	}
@@ -158,6 +159,7 @@ GLuint LoadShaders(const char* vertex_shader, const char* fragment_shader)
 	{
 		std::vector<char> FragmentShaderErrorMessage(InfoLogLength + 1);
 		glGetShaderInfoLog(FragmentShaderID, InfoLogLength, NULL, &FragmentShaderErrorMessage[0]);
+		ShowWindow(GetConsoleWindow(), SW_SHOW);
 		printf("%s\n", &FragmentShaderErrorMessage[0]);
 		hwBpx();
 	}
@@ -176,6 +178,7 @@ GLuint LoadShaders(const char* vertex_shader, const char* fragment_shader)
 	{
 		std::vector<char> ProgramErrorMessage(InfoLogLength + 1);
 		glGetProgramInfoLog(ProgramID, InfoLogLength, NULL, &ProgramErrorMessage[0]);
+		ShowWindow(GetConsoleWindow(), SW_SHOW);
 		printf("%s\n", &ProgramErrorMessage[0]);
 		hwBpx();
 	}
@@ -203,6 +206,7 @@ GLuint LoadShadersFromFiles(const wchar_t* vertex_file_path, const wchar_t* frag
 	}
 	else
 	{
+		ShowWindow(GetConsoleWindow(), SW_SHOW);
 		printf("Failed to read vertex shader: %s\n", vertex_file_path);
 		hwBpx();
 		return 0;
@@ -220,6 +224,7 @@ GLuint LoadShadersFromFiles(const wchar_t* vertex_file_path, const wchar_t* frag
 	}
 	else
 	{
+		ShowWindow(GetConsoleWindow(), SW_SHOW);
 		printf("Failed to read fragement shader: %s.\n", fragment_file_path);
 		hwBpx();
 		return 0;
