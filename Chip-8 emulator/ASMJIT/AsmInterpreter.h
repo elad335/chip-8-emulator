@@ -1,7 +1,6 @@
 #pragma once
 #include "asmutils.h"
 #include "../utils.h"
-#include "../emucore.h"
 
 struct asm_insts
 {

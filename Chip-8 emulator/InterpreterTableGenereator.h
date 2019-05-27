@@ -1,5 +1,4 @@
 #pragma once
-#include "utils.h"
 #include "emucore.h"
 
 template<typename Ops, typename T, std::size_t N>
@@ -30,7 +29,7 @@ static void genTable(T(&table)[N])
 			}
 			else
 			{
-				// SYS: TODO
+				// SYS
 				break;
 			}
 		}

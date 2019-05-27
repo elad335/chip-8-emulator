@@ -1,8 +1,7 @@
-#include "asmutils.h"
-#include "AsmInterpreter.h"
+#include "render.h"
 #include "../emucore.h"
 #include "../input.h"
-#include <array>
+#include "AsmInterpreter.h"
 
 using namespace asmjit;
 
@@ -34,7 +33,7 @@ static const X86Gp& retn = x86::rax;
 
 #define DECLARE(...) decltype(__VA_ARGS__) __VA_ARGS__
 #define STATE_OFFS(member) ::offset32(&emu_state_t::member)
-#define STACK_RESERVE (40u)
+#define STACK_RESERVE (0x28)
 
 // Addressing helpers:
 // Get offset shift by type (size must be 1, 2, 4, or 8)
@@ -75,7 +74,7 @@ static void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcod
 };
 
 // Fallback to cpp interpreter for debugging
-static inline void fallback(X86Assembler& c)
+static void fallback(X86Assembler& c)
 {
 	// Wrapper to member function
 	static const auto call_interpreter = [](emu_state_t* state)
@@ -84,9 +83,8 @@ static inline void fallback(X86Assembler& c)
 	};
 
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
-	c.mov(pc, x86::qword_ptr(x86::rsp, STACK_RESERVE));
-	c.add(x86::rsp, STACK_RESERVE + 8);
-	c.jmp(imm_ptr<void(*)(emu_state_t*)>(call_interpreter)); // Tail call is required for instructions which should immediatly return
+	c.call(imm_ptr<void(*)(emu_state_t*)>(call_interpreter));
+	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 }
 
 static asmjit::X86Mem refVF()
@@ -109,9 +107,9 @@ static asm_insts::func_t build_instruction(F&& func)
 
 		if (g_sleep_supported)
 		{
-			c.mov(args[0], 16);
+			c.mov(args[0], 1);
 			c.call(imm_ptr(&::Sleep));
-			c.mov(state, imm_ptr(&g_state)); // TODO: Don't hardocde this, supply this by a template argument
+			c.mov(state, imm_ptr(&g_state));
 		}
 
 		if (::has_movbe())
@@ -136,9 +134,9 @@ static asm_insts::func_t build_instruction(F&& func)
 
 DECLARE(asm_insts::entry) = build_function_asm<decltype(asm_insts::entry)>([](X86Assembler& c)
 {
-	c.sub(x86::rsp, STACK_RESERVE + 8); // Allocate min stack frame
-	c.mov(x86::qword_ptr(x86::rsp, STACK_RESERVE), pc); // Save non-volatile register
-	c.mov(state, imm_ptr(&g_state)); // TODO: Don't hardocde this, supply this by a template argument
+	c.mov(x86::qword_ptr(x86::rsp, 0x8), pc); // Save non-volatile register at home-space
+	c.sub(x86::rsp, STACK_RESERVE); // Allocate min stack frame
+	c.mov(state, imm_ptr(&g_state));
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc))); // Load pc
 	c.movzx(args[1].r32(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
 	c.xchg(x86::dl, x86::dh); // Byteswap
@@ -161,7 +159,7 @@ DECLARE(asm_insts::RET) = build_instruction<true>([](X86Assembler& c)
 	c.mov(pc.r32(), x86::dword_ptr(state, x86::r8, GET_SHIFT_MEMBER(stack), STATE_OFFS(stack)));
 });
 
-DECLARE(asm_insts::CLS) = build_instruction<true>([](X86Assembler& c)
+DECLARE(asm_insts::CLS) = build_instruction([](X86Assembler& c)
 {
 	Label _loop = c.newLabel();
 	const u32 size_ = ::has_avx() ? 256 : 128; // Use AVX if possible
@@ -177,9 +175,8 @@ DECLARE(asm_insts::CLS) = build_instruction<true>([](X86Assembler& c)
 		c.vmovaps(x86::ymm1, x86::ymm0);
 	}
 
-	c.mov(x86::r8, x86::rcx); // Save rcx
-	c.mov(x86::ecx, sizeof(emu_state_t::gfxMemory) / size_);
 	c.lea(x86::r9, x86::ptr(state, STATE_OFFS(gfxMemory)));
+	c.mov(x86::ecx, sizeof(emu_state_t::gfxMemory) / size_);
 	c.bind(_loop);
 
 	// Use out-of-order execution by using more than one register
@@ -199,13 +196,9 @@ DECLARE(asm_insts::CLS) = build_instruction<true>([](X86Assembler& c)
 
 	c.add(x86::r9, size_);
 	c.loop(_loop);
-	c.mov(x86::rcx, x86::r8); // Restore rcx
-	c.add(pc.r32(), 2);
-	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32()); // Update pc as we cached it in register so far
-	c.or_(x86::dword_ptr(state, STATE_OFFS(emu_flags)), emu_flag::clear_screan);
-	c.mov(pc, x86::qword_ptr(x86::rsp, STACK_RESERVE));
-	c.add(x86::rsp, STACK_RESERVE + 8);
-	c.ret(); // Update the screen and continue
+	c.mov(args[0], x86::r9); // Set gfxMemory* as argument
+	c.call(imm_ptr(&::KickChip8Framebuffer));
+	c.mov(state, imm_ptr(&g_state));
 });
 
 DECLARE(asm_insts::JP) = build_instruction<true>([](X86Assembler& c)
@@ -229,7 +222,7 @@ DECLARE(asm_insts::CALL) = build_instruction<true>([](X86Assembler& c)
 #endif
 
 	c.mov(x86::dword_ptr(state, x86::r8, GET_SHIFT_MEMBER(stack), STATE_OFFS(stack)), pc.r32());
-	c.add(x86::r8d, 1);
+	c.inc(x86::r8d);
 	c.mov(x86::dword_ptr(state, STATE_OFFS(sp)), x86::r8d);
 	c.mov(pc.r32(), opcode.r32());
 });
@@ -375,8 +368,7 @@ DECLARE(asm_insts::JPr) = build_instruction<true>([](X86Assembler& c)
 {
 	c.movzx(opcode.r32(), opcode.r16());
 	c.movzx(x86::r8d, x86::byte_ptr(state, STATE_OFFS(gpr) + 0));
-	c.add(opcode.r32(), x86::r8d);
-	c.mov(pc.r32(), opcode.r32());
+	c.lea(pc.r32(), x86::ptr(opcode, x86::r8d));
 });
 
 DECLARE(asm_insts::RND) = build_instruction([](X86Assembler& c)
@@ -388,11 +380,11 @@ DECLARE(asm_insts::RND) = build_instruction([](X86Assembler& c)
 	c.mov(x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)), x86::al);
 });
 
-DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
+DECLARE(asm_insts::DRW) = build_instruction([](X86Assembler& c)
 {
 	Label skip = c.newLabel();
-	Label skip2 = c.newLabel();
-	Label outer = c.newLabel();
+	Label main_loop = c.newLabel();
+	Label skip_size0 = c.newLabel();
 
 	// Ram pointer
 	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(index)));
@@ -409,12 +401,6 @@ DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
 	// Vram offset
 	c.add(x86::r9d, x86::r10d);
 
-	// Increment pc as we are about to return
-	c.add(pc.r32(), 2);
-
-	getField<0>(c, opcode);
-	c.je(skip2); // Skip if zero (flags set in getField)
-
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32()); // Free pc
 	const X86Gp temp = pc.r32();
 
@@ -422,9 +408,13 @@ DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
 	c.xor_(x86::r11d, x86::r11d);
 	c.mov(temp, 1);
 
+	// Get lines amount
+	getField<0>(c, opcode);
+	c.je(skip_size0); // Flags set at getField, must check this
+
 	// Get max ram address
 	c.lea(x86::rdx, x86::ptr(x86::r8, x86::rdx));
-	c.bind(outer);
+	c.bind(main_loop);
 
 	// Load pixel value
 	c.movzx(x86::r10d, x86::byte_ptr(x86::r8));
@@ -447,15 +437,14 @@ DECLARE(asm_insts::DRW) = build_instruction<true>([](X86Assembler& c)
 	c.add(x86::r8, emu_state_t::x_shift);
 	c.add(x86::r9, emu_state_t::y_shift);
 	c.cmp(x86::r8, x86::rdx);
-	c.jne(outer);
+	c.jne(main_loop);
 
-	c.or_(x86::dword_ptr(state, STATE_OFFS(emu_flags)), emu_flag::display_update);
+	c.bind(skip_size0);
 	c.mov(refVF(), x86::r11b);
-	c.mov(pc, x86::qword_ptr(x86::rsp, STACK_RESERVE));
-	c.add(x86::rsp, STACK_RESERVE + 8);
-	c.ret(); // Update the screen and continue
-	c.bind(skip2);
-	c.mov(refVF(), x86::edx);
+	c.lea(args[0], x86::ptr(state, STATE_OFFS(gfxMemory)));
+	c.call(imm_ptr(&::KickChip8Framebuffer));
+	c.mov(state, imm_ptr(&g_state));
+	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 });
 
 DECLARE(asm_insts::SKP) = build_instruction<true>([](X86Assembler& c)
@@ -593,13 +582,15 @@ DECLARE(asm_insts::LDR) = build_instruction([](X86Assembler& c)
 	c.add(x86::dword_ptr(state, STATE_OFFS(index)), opcode.r32());
 });
 
-DECLARE(asm_insts::UNK) = build_instruction([](X86Assembler& c)
+DECLARE(asm_insts::UNK) = build_instruction<true>([](X86Assembler& c)
 {
-	c.or_(x86::dword_ptr(state, STATE_OFFS(emu_flags)), emu_flag::illegal_operation);
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
-	c.mov(pc, x86::qword_ptr(x86::rsp, STACK_RESERVE));
-	c.add(x86::rsp, STACK_RESERVE + 8);
-	c.ret();
+
+#ifdef DEBUG_INSTS
+	c.int3();
+#else
+	c.ud2();
+#endif
 });
 
 DECLARE(asm_insts::guard) = build_instruction<true>([](X86Assembler& c)

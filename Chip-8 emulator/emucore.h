@@ -8,13 +8,6 @@ struct alignas(2) time_control_t
 	u8 delay;
 };
 
-enum emu_flag : u32
-{
-	clear_screan = (1 << 0),
-	display_update = (1 << 1),
-	illegal_operation = (1 << 2),
-};
-
 struct emu_state_t
 {
 	// The RAM (4k + instruction flow guard)
@@ -33,8 +26,10 @@ struct emu_state_t
 	u32 index;
 	// Container for delay timer and sound timer
 	std::atomic<time_control_t> timers;
-	// Set to reflect certian emu conditions
-	u32 emu_flags = {};
+	// Set when it's time to close the emulator
+	volatile bool terminate = false;
+	// Timers thread's thread handle
+	std::thread* volatile hwtimers;
 	// Asmjit/Interpreter: function table
 	std::uintptr_t ops[UINT16_MAX + 1];
 	// Opcodes simple fallbacks

@@ -1,14 +1,9 @@
-#include <chrono>
-#include <thread>
-#include <mutex>
-#include <atomic>
-
 #include "emucore.h"
 #include "hwtimers.h"
 
 void timerJob()
 {
-	while (true)
+	while (!g_state.terminate)
 	{
 		Sleep(16);
 
