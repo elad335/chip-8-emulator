@@ -41,6 +41,28 @@ void emu_state_t::reset()
 	timers.store({});
 	genTable<asm_insts>(ops);
 	hwtimers = new std::thread(timerJob);
+
+	// Compilation time decoding of all possible pixel values for DRW
+	// Note: this assumes little endian
+	for (u32 i = 0; i < UINT8_MAX + 1; i++)
+	{
+		// Raw bytes view
+		union
+		{
+			u64 l;
+			u8 b[sizeof(l)];
+		} view = {};
+
+		for (u32 bit = 0; bit < 8; bit++)
+		{
+			if (i & (1u << bit))
+			{
+				view.b[7 - bit] = 0xFF;
+			}
+		}
+
+		DRWtable[i] = view.l;
+	}
 }
 
 u8& emu_state_t::getVF()
@@ -378,8 +400,10 @@ void emu_state_t::OpcodeFallback()
 				continue;
 			}
 
+			size_t used_offset = offset;
+
 			// Unpack bits into pixels
-			for (u32 i = 0; i < 8; i++, offset++)
+			for (u32 i = 0; i < 8; i++, used_offset++)
 			{
 				// Do nothing if zero
 				if (((pvalue << i) & 0x80) == 0)
@@ -387,11 +411,11 @@ void emu_state_t::OpcodeFallback()
 					continue;
 				}
 
-				// Wrap around x and y axis
-				offset &= xy_mask;
+				// Wrap around x and y axises
+				used_offset &= xy_mask;
 
 				// Obtain pointer to the pixel dst
-				auto& pix = gfxMemory[offset];
+				auto& pix = gfxMemory[used_offset];
 
 				if (pix != 0)
 				{
@@ -402,8 +426,6 @@ void emu_state_t::OpcodeFallback()
 				// Update pixel
 				pix ^= 0xff;
 			}
-
-			offset -= 8;
 		}
 
 		KickChip8Framebuffer(+gfxMemory);

@@ -23,13 +23,19 @@ static std::array<const X86Gp, 4> args =
 static const X86Gp& retn = x86::rax;
 
 // Temporaries
-//std::array<X86Gp, 4> tr = 
+//std::array<X86Gp, 7> tr = 
 //{
 //	x86::r8,
 //	x86::r9,
 //	x86::r10,
-//	x86::r11
+//	x86::r11,
+//	x86::r12, // non-volatile 
+//	x86::r13, // non-volatile
+//	x86::r14  // non-volatile
 //};
+
+// Optional code emitting after the end of the current instruction
+static std::function<void(X86Assembler&)> from_end{};
 
 #define DECLARE(...) decltype(__VA_ARGS__) __VA_ARGS__
 #define STATE_OFFS(member) ::offset32(&emu_state_t::member)
@@ -128,13 +134,23 @@ static asm_insts::func_t build_instruction(F&& func)
 			c.xchg(x86::dl, x86::dh); // Byteswap
 		}
 
+		// Jumptable
 		c.jmp(x86::qword_ptr(state, args[1], GET_SHIFT_MEMBER(ops), STATE_OFFS(ops)));
+
+		// Emit optional code
+		if (auto builder = std::move(from_end))
+		{
+			builder(std::ref(c));
+		}
 	});
 }
 
 DECLARE(asm_insts::entry) = build_function_asm<decltype(asm_insts::entry)>([](X86Assembler& c)
 {
-	c.mov(x86::qword_ptr(x86::rsp, 0x8), pc); // Save non-volatile register at home-space
+	c.mov(x86::qword_ptr(x86::rsp, 0x8), pc); // Save non-volatile register on home-space
+	c.mov(x86::qword_ptr(x86::rsp, 0x10), x86::r12);
+	c.mov(x86::qword_ptr(x86::rsp, 0x18), x86::r13);
+	c.mov(x86::qword_ptr(x86::rsp, 0x20), x86::r14);
 	c.sub(x86::rsp, STACK_RESERVE); // Allocate min stack frame
 	c.mov(state, imm_ptr(&g_state));
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc))); // Load pc
@@ -380,11 +396,13 @@ DECLARE(asm_insts::RND) = build_instruction([](X86Assembler& c)
 	c.mov(x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)), x86::al);
 });
 
+// This is an extremely accurate yet extremely fast implementation
 DECLARE(asm_insts::DRW) = build_instruction([](X86Assembler& c)
 {
-	Label skip = c.newLabel();
 	Label main_loop = c.newLabel();
 	Label skip_size0 = c.newLabel();
+	Label table_lookup = c.newLabel();
+	Label needs_wrapping = c.newLabel();
 
 	// Ram pointer
 	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(index)));
@@ -401,40 +419,37 @@ DECLARE(asm_insts::DRW) = build_instruction([](X86Assembler& c)
 	// Vram offset
 	c.add(x86::r9d, x86::r10d);
 
-	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32()); // Free pc
-	const X86Gp temp = pc.r32();
-
 	// VF setup
 	c.xor_(x86::r11d, x86::r11d);
-	c.mov(temp, 1);
+	c.mov(x86::r14d, 1);
 
 	// Get lines amount
 	getField<0>(c, opcode);
 	c.je(skip_size0); // Flags set at getField, must check this
 
+	// Check if needs extended wrapping
+	c.mov(x86::r12d, opcode.r32());
+	c.shl(x86::r12d, flog2<u32, emu_state_t::y_shift>());
+	c.lea(x86::r12, x86::ptr(x86::r9, x86::r12, 0,  7));
+	c.test(x86::r12d, ~((u32)emu_state_t::xy_mask));
+	c.jne(needs_wrapping);
+
 	// Get max ram address
 	c.lea(x86::rdx, x86::ptr(x86::r8, x86::rdx));
 	c.bind(main_loop);
 
-	// Load pixel value
+	// Load pixel value and decode it
 	c.movzx(x86::r10d, x86::byte_ptr(x86::r8));
-	c.test(x86::r10d, x86::r10d);
-	c.je(skip);
+	c.mov(x86::r10, x86::qword_ptr(state, x86::r10, GET_SHIFT_MEMBER(DRWtable), STATE_OFFS(DRWtable)));
 
-	// Unpack bits into pixels (unrolled loop)
-	for (u32 i = 0; i < 8; i++)
-	{
-		Label next = c.newLabel();
-		c.bt(x86::r10d, 7 - i);
-		c.jnc(next);
-		c.and_(x86::r9d, emu_state_t::xy_mask); // Wrap around y axis (TODO: x axis)
-		c.xor_(x86::byte_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory) + i), 0xff);
-		c.cmove(x86::r11d, temp); // Set VF
-		c.bind(next);
-	}
+	// Load previous qword pixels state and test VF
+	c.mov(x86::r12, x86::qword_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory)));
+	c.test(x86::r10, x86::r12);
+	c.cmovne(x86::r11d, x86::r14d);
+	c.xor_(x86::r10, x86::r12);
+	c.mov(x86::qword_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory)), x86::r10);
 
-	c.bind(skip);
-	c.add(x86::r8, emu_state_t::x_shift);
+	c.inc(x86::r8);
 	c.add(x86::r9, emu_state_t::y_shift);
 	c.cmp(x86::r8, x86::rdx);
 	c.jne(main_loop);
@@ -444,7 +459,47 @@ DECLARE(asm_insts::DRW) = build_instruction([](X86Assembler& c)
 	c.lea(args[0], x86::ptr(state, STATE_OFFS(gfxMemory)));
 	c.call(imm_ptr(&::KickChip8Framebuffer));
 	c.mov(state, imm_ptr(&g_state));
-	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
+
+	// Specilization for wrapping
+	from_end = [=](X86Assembler& c)
+	{
+		Label wrap_loop = c.newLabel();
+		Label wrap_skip = c.newLabel();
+		c.align(kAlignCode, 16);
+		c.bind(needs_wrapping);
+
+		// Get max ram address
+		c.lea(x86::rdx, x86::ptr(x86::r8, x86::rdx));
+		c.bind(wrap_loop);
+
+		// Load pixel value
+		c.movzx(x86::r10d, x86::byte_ptr(x86::r8));
+		c.test(x86::r10d, x86::r10d);
+		c.je(wrap_skip);
+
+		// Temp offset for clamping
+		c.mov(x86::r12d, x86::r9d);
+
+		// Unpack bits into pixels (unrolled loop)
+		for (u32 i = 0; i < 8; i++)
+		{
+			Label next = c.newLabel();
+			c.bt(x86::r10d, 7 - i);
+			c.jnc(next);
+			c.and_(x86::r12d, emu_state_t::xy_mask); // Wrap around y and x axises
+			c.xor_(x86::byte_ptr(state, x86::r12, 0, STATE_OFFS(gfxMemory)), 0xff);
+			c.cmove(x86::r11d, x86::r14d); // Set VF
+			c.bind(next);
+			c.inc(x86::r12d);
+		}
+
+		c.bind(wrap_skip);
+		c.inc(x86::r8);
+		c.add(x86::r9, emu_state_t::y_shift);
+		c.cmp(x86::r8, x86::rdx);
+		c.jne(wrap_loop);
+		c.jmp(skip_size0); // Return to normal instruction epilouge 
+	};
 });
 
 DECLARE(asm_insts::SKP) = build_instruction<true>([](X86Assembler& c)

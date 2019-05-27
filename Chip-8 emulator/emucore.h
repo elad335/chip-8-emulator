@@ -30,6 +30,8 @@ struct emu_state_t
 	volatile bool terminate = false;
 	// Timers thread's thread handle
 	std::thread* volatile hwtimers;
+	// DRW pixel decoding lookup table
+	u64 DRWtable[UINT8_MAX + 1]; 
 	// Asmjit/Interpreter: function table
 	std::uintptr_t ops[UINT16_MAX + 1];
 	// Opcodes simple fallbacks
