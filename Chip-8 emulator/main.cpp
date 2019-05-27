@@ -3,10 +3,10 @@
 
 #include <cstdio>
 #include <immintrin.h>
+#include "render.h"
 #include "emucore.h"
 #include "hwtimers.h"
 #include "input.h"
-#include "render.h"
 #include "InterpreterTableGenereator.h"
 #include "ASMJIT/AsmInterpreter.h"
 #include <iostream>
@@ -14,10 +14,11 @@
 #include <filesystem>
 
 namespace fs = std::filesystem;
-static wchar_t display_buf[32 * 65]{};
 
 static std::wstring ChooseExecutable()
 {
+	wchar_t display_buf[32 * 65]{};
+
 	std::vector<std::wstring> files;
 	std::vector<const wchar_t*> names;
 
@@ -60,11 +61,9 @@ static std::wstring ChooseExecutable()
 	system("Cls");
 	wprintf(+display_buf);
 
-	constexpr u16 test_bit = 0x8000;
-
 	for (int cur_index = 0;;)
 	{
-		if (::GetKeyState(VK_RETURN) & test_bit)
+		if (input::TestKeyState(VK_RETURN))
 		{
 			system("Cls");
 			return std::move(files[cur_index]);
@@ -72,7 +71,7 @@ static std::wstring ChooseExecutable()
 
 		bool update = false;
 
-		if (::GetKeyState(VK_UP) & test_bit || ::GetKeyState(0x57) & test_bit)
+		if (input::TestKeyState(VK_UP, 0x57))
 		{
 			display_buf[(line_offset + cur_index) * 65] = ' ';
 			update = true;
@@ -80,7 +79,7 @@ static std::wstring ChooseExecutable()
 			cur_index %= names.size();
 		}
 
-		if (::GetKeyState(VK_DOWN) & test_bit || ::GetKeyState(0x53) & test_bit)
+		if (input::TestKeyState(VK_DOWN, 0x53))
 		{
 			display_buf[(line_offset + cur_index) * 65] = ' ';
 			update = true;
@@ -106,10 +105,9 @@ static std::wstring ChooseExecutable()
 
 int main()
 {
-	genTable<asm_insts>(g_state.ops);
 	g_state.reset();
 
-	do
+	// Wait and load executable choice
 	{
 		static const auto failure = []()
 		{
@@ -143,58 +141,15 @@ int main()
 			return failure();
 		}
 
+		// Executable load start address is 0x200
 		file.read(g_state.ptr<u8>(0x200), length);
 	}
-	while (0);
 
-	std::thread hwTimers(timerJob);
+	// Open graphics window and close console
+	InitWindow();
 
-	while (true)
-	{
-		asm_insts::entry();
+	// Asm code now takes over
+	asm_insts::entry();
 
-		switch (g_state.emu_flags)
-		{
-		case emu_flag::display_update:
-		{
-			// TODO
-			system("Cls");
-
-			for (u32 i = 0; i < 32; i++)
-			{
-				for (u32 j = 0; j < 64; j++)
-				{
-					display_buf[i * 65 + j] = (g_state.gfxMemory[i * emu_state_t::y_shift + j] != 0 ? '0' : ' ');
-				}
-
-				display_buf[i * 65 + 64] = '\n';
-			}
-
-			display_buf[65 * 31 + 64] = '\0';
-			wprintf(+display_buf);
-
-			g_state.emu_flags &= ~emu_flag::display_update;
-			continue;
-		}
-		case emu_flag::clear_screan:
-		{
-			system("Cls");
-			g_state.emu_flags &= ~emu_flag::clear_screan;
-			continue;
-		}
-		case emu_flag::illegal_operation:
-		{
-			hwBpx();
-		}
-		default:
-		{
-			UNREACHABLE();
-		}
-		}
-
-	}
-
-	// Unreachable at the moment
-	hwTimers.join();
 	return 0;
 }

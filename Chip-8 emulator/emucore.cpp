@@ -1,5 +1,9 @@
+#include "render.h"
 #include "input.h"
 #include "emucore.h"
+#include "hwtimers.h"
+#include "InterpreterTableGenereator.h"
+#include "ASMJIT/AsmInterpreter.h"
 
 emu_state_t g_state;
 
@@ -25,7 +29,7 @@ static const u8 fontset[80] =
 
 void emu_state_t::reset()
 {
-	std::memset(memBase, 0xAA, sizeof(memBase));
+	std::memset(memBase, 0, sizeof(memBase));
 	std::memcpy(memBase, fontset, sizeof(fontset));
 	std::memset(gfxMemory, 0, sizeof(gfxMemory));
 	std::memset(gpr, 0, sizeof(gpr));
@@ -35,6 +39,8 @@ void emu_state_t::reset()
 	pc = 0x200;
 	index = 0;
 	timers.store({});
+	genTable<asm_insts>(ops);
+	hwtimers = new std::thread(timerJob);
 }
 
 u8& emu_state_t::getVF()
@@ -76,9 +82,8 @@ void emu_state_t::OpcodeFallback()
 		else if (opcode == 0x00E0)
 		{
 			// CLS: Display clear
-			std::memset(&gfxMemory[0], 0, 2048);
-			emu_flags |= emu_flag::clear_screan;
-			_mm_sfence();
+			std::memset(gfxMemory, 0, sizeof(gfxMemory));
+			KickChip8Framebuffer(+gfxMemory);
 			return Procceed();
 		}
 		else
@@ -279,7 +284,6 @@ void emu_state_t::OpcodeFallback()
 		case 0xE:
 		{
 			// Shift left by 1 (store MSB in VF)
-			// TODO: Optimize with assembly
 			const u8 reg = getField<2>(opcode);
 			const u8 result = gpr[reg];
 
@@ -402,13 +406,13 @@ void emu_state_t::OpcodeFallback()
 			offset -= 8;
 		}
 
-		// Update the screen
-		emu_flags |= emu_flag::display_update;
+		KickChip8Framebuffer(+gfxMemory);
 		return Procceed();
 	}
 	case 0xE:
 	{
 		// Class 14 instructions
+		using namespace input;
 
 		switch (opcode & 0xFF)
 		{
@@ -417,7 +421,7 @@ void emu_state_t::OpcodeFallback()
 			// SKP: Skip instruction if specified key is pressed
 			const u8 reg = getField<2>(opcode);
 
-			const bool pressed = input::GetKeyState(gpr[reg] & 0xf);
+			const bool pressed = TestKeyState(keyIDs[gpr[reg] & 0xf]);
 
 			if (pressed)
 			{
@@ -432,7 +436,7 @@ void emu_state_t::OpcodeFallback()
 			// SKNP: Skip instruction if specified key is not pressed
 			const u8 reg = getField<2>(opcode);
 
-			const bool pressed = input::GetKeyState(gpr[reg] & 0xf);
+			const bool pressed = TestKeyState(keyIDs[gpr[reg] & 0xf]);
 
 			if (!pressed)
 			{
@@ -557,5 +561,5 @@ void emu_state_t::OpcodeFallback()
 		return;
 	}
 
-	emu_flags |= emu_flag::illegal_operation;
+	hwBpx();
 }

@@ -11,12 +11,6 @@ namespace input
 		return keyIDs[keyid];
 	};
 
-	bool GetKeyState(u8 keyid)
-	{
-		const int id = loadKeyID(keyid);
-		return !!(::GetKeyState(id) & 0x8000);
-	};
-
 	u8 WaitForPress()
 	{
 		// May need perf tuning (use an OS's blocking method)
@@ -24,7 +18,7 @@ namespace input
 		{
 			for (u32 i = 0; i < std::size(keyIDs); i++)
 			{
-				if (GetKeyState(i))
+				if (TestKeyState(i))
 				{
 					return i;
 				}

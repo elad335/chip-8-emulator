@@ -6,8 +6,6 @@
 #include <stdlib.h>
 #include <utility>
 #include <thread>
-#include <chrono>
-#include <mutex>
 #include <array>
 #include <atomic>
 #include <string>
@@ -116,12 +114,6 @@ namespace atomic
 			}
 		}
 	}
-
-	template<typename T>
-	void store(T& var, T value)
-	{
-		reinterpret_cast<std::atomic<T>*>(&var)->store(value);
-	}
 };
 
 namespace
@@ -132,7 +124,7 @@ namespace
 		if (!value)
 		{
 			// Segfault
-			static_cast<std::atomic<u32>*>(nullptr)->load();
+			std::launder(static_cast<volatile std::atomic<u32>*>(nullptr))->load();
 		}
 
 		return value;
@@ -145,7 +137,7 @@ namespace
 		if (!std::invoke(std::forward<F>(func), value))
 		{
 			// Segfault
-			static_cast<std::atomic<u32>*>(nullptr)->load();
+			std::launder(static_cast<volatile std::atomic<u32>*>(nullptr))->load();
 		}
 
 		return value;
