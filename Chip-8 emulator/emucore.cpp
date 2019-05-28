@@ -2,7 +2,6 @@
 #include "input.h"
 #include "emucore.h"
 #include "hwtimers.h"
-#include "InterpreterTableGenereator.h"
 #include "ASMJIT/AsmInterpreter.h"
 
 emu_state_t g_state;
@@ -34,12 +33,13 @@ void emu_state_t::reset()
 	std::memset(gfxMemory, 0, sizeof(gfxMemory));
 	std::memset(gpr, 0, sizeof(gpr));
 	std::memset(stack, 0, sizeof(stack));
+	emu_state_t::load_exec(); // Load executable and settings
 	this->ref<u16>(4096) = 0xFFFF; // Instruction flow guard
 	sp = 0;
 	pc = 0x200;
 	index = 0;
 	timers.store({});
-	genTable<asm_insts>(ops);
+	asm_insts::build_all(ops);
 	hwtimers = new std::thread(timerJob);
 
 	// Compilation time decoding of all possible pixel values for DRW
@@ -105,7 +105,7 @@ void emu_state_t::OpcodeFallback()
 		{
 			// CLS: Display clear
 			std::memset(gfxMemory, 0, sizeof(gfxMemory));
-			KickChip8Framebuffer(+gfxMemory);
+			KickChip8Framebuffer(gfxMemory);
 			return Procceed();
 		}
 		else
@@ -428,7 +428,7 @@ void emu_state_t::OpcodeFallback()
 			}
 		}
 
-		KickChip8Framebuffer(+gfxMemory);
+		KickChip8Framebuffer(gfxMemory);
 		return Procceed();
 	}
 	case 0xE:
