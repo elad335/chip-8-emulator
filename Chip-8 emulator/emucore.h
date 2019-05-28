@@ -32,12 +32,20 @@ struct emu_state_t
 	std::thread* volatile hwtimers;
 	// DRW pixel decoding lookup table
 	u64 DRWtable[UINT8_MAX + 1]; 
+	// compatibilty flag for schip 8 (don't confuse with is_super)
+	bool compatibilty = false;
 	// Asmjit/Interpreter: function table
 	std::uintptr_t ops[UINT16_MAX + 1];
+	// Settings section: sleep between instructions in ms
+	u64 sleep_period = 16;
+	// Is schip 8 boolean
+	bool is_super = false;
 	// Opcodes simple fallbacks
 	void OpcodeFallback();
 	// Reset registers
 	void reset();
+	// Load rom
+	void load_exec();
 	// VF reference wrapper
 	u8& getVF();
 

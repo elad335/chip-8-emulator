@@ -2,49 +2,66 @@
 #include "asmutils.h"
 #include "../utils.h"
 
+#include <vector>
+
 struct asm_insts
 {
 public:
 	// Entry function
 	static void(*entry)();
+	static decltype(entry) build_entry();
 
-	// Min address sized type
+	// Instruction builder type
+	using build_t = void(asmjit::X86Assembler&);
+	// Intruction function pointer type
 	using func_t = std::uintptr_t;
 
-	static func_t RET;
-	static func_t CLS;
-	static func_t JP;
-	static func_t CALL;
-	static func_t SEi;
-	static func_t SNEi;
-	static func_t SE;
-	static func_t WRI;
-	static func_t ADDI;
-	static func_t ASS;
-	static func_t OR;
-	static func_t AND;
-	static func_t XOR;
-	static func_t ADD;
-	static func_t SUB;
-	static func_t SHR;
-	static func_t RSB;
-	static func_t SHL;
-	static func_t SNE;
-	static func_t SetIndex;
-	static func_t JPr;
-	static func_t RND;
-	static func_t DRW;
-	static func_t SKP;
-	static func_t SKNP;
-	static func_t GetD;
-	static func_t GetK;
-	static func_t SetD;
-	static func_t SetS;
-	static func_t AddIndex;
-	static func_t SetCh;
-	static func_t STD;
-	static func_t STR;
-	static func_t LDR;
-	static func_t UNK;
-	static func_t guard;
+	struct inst_entry
+	{
+		const u16 mask;
+		const u16 opcode;
+		const bool is_jump;
+		std::add_pointer_t<build_t> builder;
+	};
+
+	static const std::vector<inst_entry> all_ops;
+
+	static void build_all(std::uintptr_t* table);
+
+	static build_t RET;
+	static build_t CLS;
+	static build_t JP;
+	static build_t CALL;
+	static build_t SEi;
+	static build_t SNEi;
+	static build_t SE;
+	static build_t WRI;
+	static build_t ADDI;
+	static build_t ASS;
+	static build_t OR;
+	static build_t AND;
+	static build_t XOR;
+	static build_t ADD;
+	static build_t SUB;
+	static build_t SHR;
+	static build_t RSB;
+	static build_t SHL;
+	static build_t SNE;
+	static build_t SetIndex;
+	static build_t JPr;
+	static build_t RND;
+	static build_t DRW;
+	static build_t SKP;
+	static build_t SKNP;
+	static build_t GetD;
+	static build_t GetK;
+	static build_t SetD;
+	static build_t SetS;
+	static build_t AddIndex;
+	static build_t SetCh;
+	static build_t STD;
+	static build_t STR;
+	static build_t LDR;
+	static build_t UNK;
+	static build_t guard;
 };

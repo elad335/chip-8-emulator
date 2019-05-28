@@ -62,9 +62,6 @@
     <ClInclude Include="ASMJIT\asmutils.h">
       <Filter>Header Files\ASMJIT</Filter>
     </ClInclude>
-    <ClInclude Include="InterpreterTableGenereator.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="render.h">
       <Filter>Header Files</Filter>
     </ClInclude>
