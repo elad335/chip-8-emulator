@@ -32,12 +32,14 @@ typedef std::uint16_t u16;
 typedef std::uint32_t u32;
 typedef std::uint64_t u64;
 typedef std::uintptr_t uptr;
+typedef std::uintmax_t umax_t;
 
 typedef std::int8_t s8;
 typedef std::int16_t s16;
 typedef std::int32_t s32;
 typedef std::int64_t s64;
 typedef std::intptr_t sptr;
+typedef std::intmax_t smax_t;
 
 typedef long double f80;
 typedef double f64;
@@ -333,7 +335,7 @@ static inline constexpr T clog2()
 	{
 		if (value_ & (static_cast<std::make_unsigned_t<T>>(std::numeric_limits<std::make_signed_t<T>>::min())))
 		{
-			return i + T(value_ & static_cast<std::make_unsigned_t<T>>(std::numeric_limits<std::make_signed_t<T>>::max()) != 0);
+			return i + T((value_ & static_cast<std::make_unsigned_t<T>>(std::numeric_limits<std::make_signed_t<T>>::max())) != 0);
 		}
 	}
 

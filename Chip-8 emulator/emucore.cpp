@@ -4,7 +4,7 @@
 #include "hwtimers.h"
 #include "ASMJIT/AsmInterpreter.h"
 
-emu_state_t g_state;
+emu_state g_state;
 
 static const u8 fontset[80] =
 { 
@@ -26,14 +26,14 @@ static const u8 fontset[80] =
 	0xF0, 0x80, 0xF0, 0x80, 0x80  // F
 };
 
-void emu_state_t::reset()
+void emu_state::reset()
 {
 	std::memset(memBase, 0, sizeof(memBase));
 	std::memcpy(memBase, fontset, sizeof(fontset));
 	std::memset(gfxMemory, 0, sizeof(gfxMemory));
 	std::memset(gpr, 0, sizeof(gpr));
 	std::memset(stack, 0, sizeof(stack));
-	emu_state_t::load_exec(); // Load executable and settings
+	emu_state::load_exec(); // Load executable and settings
 	this->ref<u16>(4096) = 0xFFFF; // Instruction flow guard
 	sp = 0;
 	pc = 0x200;
@@ -65,14 +65,14 @@ void emu_state_t::reset()
 	}
 }
 
-u8& emu_state_t::getVF()
+u8& emu_state::getVF()
 {
 	// The 15 register
 	return gpr[0xF];
 }
 
-// Execute one instruction for fallback (debugging only)
-void emu_state_t::OpcodeFallback()
+// Legacy interpreter (don't use)
+void emu_state::OpcodeFallback()
 {
 	// Procced normally
 	const auto Procceed = [this](const bool jump = false)
@@ -269,7 +269,7 @@ void emu_state_t::OpcodeFallback()
 
 			// Set sign as VF
 			if (reg == 15) hwBpx();
-			getVF() = (u8)(result >> 15);
+			getVF() = (u8)(result >> 15) ^ 1;
 			gpr[reg] = (u8)result;
 			return Procceed();
 		}
@@ -371,7 +371,7 @@ void emu_state_t::OpcodeFallback()
 		const u8 size = getField<0>(opcode);
 
 		// Get the start of sprite location in vram
-		size_t offset = (gpr[getField<2>(opcode)] & 0x3f) + ((gpr[getField<1>(opcode)] & 0x1f) * y_shift);
+		size_t offset = (gpr[getField<2>(opcode)] & 0x3f) + ((gpr[getField<1>(opcode)] & 0x1f) * y_stride);
 
 #ifdef  DEBUG_INSTS
 		if ((gpr[getField<2>(opcode)] & ~0x3f) || (gpr[getField<1>(opcode)] & ~0x1f))
@@ -391,7 +391,7 @@ void emu_state_t::OpcodeFallback()
 
 		//NOTE: This draws in XOR mode! - meaning the pixel color is flipped anytime any bit is 1
 
-		for (u32 row = 0; row < size; row++, offset += y_shift)
+		for (u32 row = 0; row < size; row++, offset += y_stride)
 		{
 			pvalue = src[row];
 
@@ -521,6 +521,7 @@ void emu_state_t::OpcodeFallback()
 		case 0x1E:
 		{
 			// Add register value to mem pointer
+			// note: value is not clamped to 12-bits on realhw
 			const u8 reg = getField<2>(opcode);
 			index += (u32)gpr[reg];
 			return Procceed();
@@ -578,9 +579,8 @@ void emu_state_t::OpcodeFallback()
 	if (opcode == 0xFFFF && pc == 0x1000)
 	{
 		// Handle potential instruction address overflow
-		// TODO: logging of such event
-		pc = 0x0;
-		return;
+		//pc = 0;
+		//return;
 	}
 
 	hwBpx();

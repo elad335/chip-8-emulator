@@ -3,12 +3,12 @@
 
 namespace input
 {
-	extern int keyIDs[16];
+	extern u8 keyIDs[16];
 
 	template<typename Args>
 	static bool TestKeyStateImpl(Args&& keyids)
 	{
-		return (!!(::GetKeyState(std::forward<Args>(keyids)) & 0x8000));
+		return (!!(::GetKeyState((int)std::forward<Args>(keyids)) & 0x8000));
 	}
 
 	template<typename ... Args>

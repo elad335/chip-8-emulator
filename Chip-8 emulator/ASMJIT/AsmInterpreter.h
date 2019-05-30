@@ -30,6 +30,11 @@ public:
 
 	static build_t RET;
 	static build_t CLS;
+	static build_t Compat;
+	static build_t SCR;
+	static build_t SCL;
+	static build_t RESL;
+	static build_t RESH;
 	static build_t JP;
 	static build_t CALL;
 	static build_t SEi;
@@ -51,6 +56,7 @@ public:
 	static build_t JPr;
 	static build_t RND;
 	static build_t DRW;
+	static build_t XDRW;
 	static build_t SKP;
 	static build_t SKNP;
 	static build_t GetD;

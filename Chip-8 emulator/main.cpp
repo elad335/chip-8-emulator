@@ -14,7 +14,7 @@
 
 namespace fs = std::filesystem;
 
-void emu_state_t::load_exec()
+void emu_state::load_exec()
 {
 	wchar_t display_buf[32 * 65]{};
 
@@ -28,7 +28,7 @@ void emu_state_t::load_exec()
 		exit(0);
 	};
 
-	// Dummy error code to prevent exceptions
+	// Dummy error code to prevent exceptions (errors handled as part of files.empty() check)
 	static std::error_code ec;
 
 	for (auto& e : fs::directory_iterator("../roms/", ec))

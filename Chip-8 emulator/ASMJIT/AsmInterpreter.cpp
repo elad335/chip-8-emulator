@@ -12,6 +12,11 @@ DECLARE(asm_insts::all_ops) =
 	{0x0000, 0x0000, true , &asm_insts::UNK}, // Fill all the table with UNK first
 	{0xFFFF, 0x00E0, false, &asm_insts::CLS},
 	{0xFFFF, 0x00EE, true , &asm_insts::RET},
+	{0xFFFF, 0x00FA, false, &asm_insts::Compat},
+	{0xFFFF, 0x00FB, false, &asm_insts::SCR},
+	{0xFFFF, 0x00FC, false, &asm_insts::SCL},
+	{0xFFFF, 0x00FE, false, &asm_insts::RESL},
+	{0xFFFF, 0x00FF, false, &asm_insts::RESH},
 	{0xF000, 0x1000, true , &asm_insts::JP},
 	{0xF000, 0x2000, true , &asm_insts::CALL},
 	{0xF000, 0x3000, true , &asm_insts::SEi},
@@ -33,6 +38,7 @@ DECLARE(asm_insts::all_ops) =
 	{0xF000, 0xB000, true , &asm_insts::JPr},
 	{0xF000, 0xC000, false, &asm_insts::RND},
 	{0xF000, 0xD000, false, &asm_insts::DRW},
+	{0xF00F, 0xD000, false, &asm_insts::XDRW},
 	{0xF0FF, 0xE09E, true , &asm_insts::SKP},
 	{0xF0FF, 0xE0A1, true , &asm_insts::SKNP},
 	{0xF0FF, 0xF007, false, &asm_insts::GetD},
@@ -44,7 +50,16 @@ DECLARE(asm_insts::all_ops) =
 	{0xF0FF, 0xF033, false, &asm_insts::STD},
 	{0xF0FF, 0xF055, false, &asm_insts::STR},
 	{0xF0FF, 0xF065, false, &asm_insts::LDR},
+	//{0xF0FF, 0xF075, false, &asm_insts::FSAVE},
+	//{0xF0FF, 0xF085, false, &asm_insts::FRESTORE},
 	{0xFFFF, 0xFFFF, true , &asm_insts::guard}
+};
+
+// Shared instruction handlers opcodes (TODO: implement for code saving)
+enum s_ops : uptr
+{
+	CLS = 0x00EEu,
+	UNK = 0xFFFFu,
 };
 
 //
@@ -79,14 +94,15 @@ static const X86Gp& retn = x86::rax;
 // Optional code emitting after the end of the current instruction
 static std::function<void(X86Assembler&)> from_end{};
 
-#define STATE_OFFS(member) ::offset32(&emu_state_t::member)
+#define STATE_OFFS(member) ::offset32(&emu_state::member)
 #define STACK_RESERVE (0x28)
 
 // Addressing helpers:
 // Get offset shift by type (size must be 1, 2, 4, or 8)
 #define GET_SHIFT(x) (::flog2<u32, sizeof(x)>())
 #define GET_SHIFT_ARR(x) (::flog2<u32, sizeof(std::remove_extent_t<decltype(x)>)>())
-#define GET_SHIFT_MEMBER(x) (GET_SHIFT_ARR(emu_state_t::##x)) 
+#define GET_SHIFT_MEMBER(x) (GET_SHIFT_ARR(emu_state::##x)) 
+#define ARR_SUBSCRIPT(x) (GET_SHIFT_ARR(emu_state::##x)), STATE_OFFS(x)
 //#define get_u256 x86::yword_ptr
 //#define get_u128 x86::oword_ptr
 //#define get_u64 x86::qword_ptr
@@ -124,15 +140,23 @@ static void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcod
 static void fallback(X86Assembler& c)
 {
 	// Wrapper to member function
-	static const auto call_interpreter = [](emu_state_t* state)
+	static const auto call_interpreter = [](emu_state* state)
 	{
 		state->OpcodeFallback();
 	};
 
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
-	c.call(imm_ptr<void(*)(emu_state_t*)>(call_interpreter));
+	c.call(imm_ptr<void(*)(emu_state*)>(call_interpreter));
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 }
+
+/*static never_inline void exec_no_return(char* message, u64 opcode)
+{
+	ShowWindow(GetConsoleWindow(), SW_SHOW);;
+	printf("%s (%llx)\n", message, opcode);
+	Sleep(5000);
+	std::exit(-1);
+}*/
 
 static asmjit::X86Mem refVF()
 {
@@ -176,7 +200,7 @@ static asm_insts::func_t build_instruction(const F& func, const bool jump)
 		}
 
 		// Jumptable
-		c.jmp(x86::qword_ptr(state, args[1], GET_SHIFT_MEMBER(ops), STATE_OFFS(ops)));
+		c.jmp(x86::qword_ptr(state, args[1], ARR_SUBSCRIPT(ops)));
 
 		// Emit optional code
 		if (auto builder = std::move(from_end))
@@ -249,13 +273,83 @@ decltype(asm_insts::entry) asm_insts::build_entry()
 		c.mov(x86::qword_ptr(x86::rsp, 0x10), x86::r12);
 		c.mov(x86::qword_ptr(x86::rsp, 0x18), x86::r13);
 		c.mov(x86::qword_ptr(x86::rsp, 0x20), x86::r14);
+		c.push(x86::r15);
+		c.push(x86::rsi);
+		c.push(x86::rdi);
+		c.push(x86::rbx);
 		c.sub(x86::rsp, STACK_RESERVE); // Allocate min stack frame
 		c.mov(state, imm_ptr(&g_state));
 		c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc))); // Load pc
 		c.movzx(args[1].r32(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
 		c.xchg(x86::dl, x86::dh); // Byteswap
-		c.jmp(x86::qword_ptr(state, args[1], GET_SHIFT_MEMBER(ops), STATE_OFFS(ops)));
+		c.jmp(x86::qword_ptr(state, args[1], ARR_SUBSCRIPT(ops)));
 	});
+}
+
+void asm_insts::CLS(X86Assembler& c)
+{
+	if (!::has_avx())
+	{
+		// TODO
+		c.ud2();
+		c.db('C');
+		c.db('L');
+		c.db('S');
+		c.int3();
+		return;
+	}
+
+	Label loop_ = c.newLabel();
+	Label loop_ex = c.newLabel();
+	Label extended_mode = c.newLabel();
+	Label end = c.newLabel();
+
+	c.vxorps(x86::ymm0, x86::ymm0, x86::ymm0);
+	c.vmovaps(x86::ymm1, x86::ymm0);
+
+	c.lea(x86::r9, x86::ptr(state, STATE_OFFS(gfxMemory)));
+
+	if (g_state.is_super)
+	{
+		c.cmp(x86::byte_ptr(state, STATE_OFFS(extended)), 0);
+		c.jne(extended_mode);
+	}
+
+	c.mov(x86::ecx, (emu_state::y_stride * emu_state::y_size) / 256);
+	c.bind(loop_);
+
+	// Use out-of-order execution by using more than one register
+	for (u32 i = 0; i < 4; i++)
+	{
+		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 0), x86::ymm0);
+		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 32), x86::ymm1);
+	}
+
+	c.add(x86::r9, 256); // Fill 256 bytes each loop
+	c.loop(loop_);
+	c.mov(args[0], (std::uintptr_t)&g_state +(u64)STATE_OFFS(gfxMemory)); // Set gfxMemory* as argument
+	c.call(imm_ptr(&::KickChip8Framebuffer));
+	c.jmp(end);
+	c.align(kAlignData, 16);
+	c.bind(extended_mode);
+
+	c.mov(x86::ecx, (emu_state::y_stride * emu_state::y_size_ex) / 256);
+	c.bind(loop_ex);
+
+	for (u32 i = 0; i < 2; i++)
+	{
+		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 0), x86::ymm0);
+		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 32), x86::ymm1);
+		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 64), x86::ymm0);
+		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 96), x86::ymm1);
+	}
+
+	c.add(x86::r9, 256);
+	c.loop(loop_ex);
+	c.mov(args[0], (std::uintptr_t)&g_state + (u64)STATE_OFFS(gfxMemory));
+	c.call(imm_ptr(&::KickSChip8Framebuffer));
+	c.bind(end);
+	c.mov(state, imm_ptr(&g_state));
 }
 
 void asm_insts::RET(X86Assembler& c)
@@ -266,54 +360,63 @@ void asm_insts::RET(X86Assembler& c)
 #ifdef  DEBUG_INSTS
 	Label ok = c.newLabel();
 	c.jns(ok);
-	c.jmp(imm_ptr(&asm_insts::UNK));
+	c.ud2();
+	c.db('U');
+	c.db('N');
+	c.db('D');
+	c.db('E');
+	c.db('R');
+	c.int3();
 	c.bind(ok);
 #endif
 
 	c.mov(x86::dword_ptr(state, STATE_OFFS(sp)), x86::r8d);
-	c.mov(pc.r32(), x86::dword_ptr(state, x86::r8, GET_SHIFT_MEMBER(stack), STATE_OFFS(stack)));
+	c.mov(pc.r32(), x86::dword_ptr(state, x86::r8, ARR_SUBSCRIPT(stack)));
 }
 
-void asm_insts::CLS(X86Assembler& c)
+void asm_insts::Compat(X86Assembler& c)
 {
-	Label _loop = c.newLabel();
-	const u32 size_ = ::has_avx() ? 256 : 128; // Use AVX if possible
-
-	if (size_ == 256)
+	if (!g_state.is_super)
 	{
-		c.xorps(x86::xmm0, x86::xmm0);
-		c.movaps(x86::xmm1, x86::xmm0);
-	}
-	else
-	{
-		c.vxorps(x86::ymm0, x86::ymm0, x86::ymm0);
-		c.vmovaps(x86::ymm1, x86::ymm0);
+		return asm_insts::UNK(c);
 	}
 
-	c.lea(x86::r9, x86::ptr(state, STATE_OFFS(gfxMemory)));
-	c.mov(x86::ecx, sizeof(emu_state_t::gfxMemory) / size_);
-	c.bind(_loop);
+	c.mov(x86::byte_ptr(state, STATE_OFFS(compatibilty)), 0u - 1u);
+}
 
-	// Use out-of-order execution by using more than one register
-	for (u32 i = 0; i < 4; i++)
+void asm_insts::SCR(X86Assembler& c)
+{
+	c.ud2();
+}
+void asm_insts::SCL(X86Assembler& c)
+{
+	c.ud2();
+}
+
+void asm_insts::RESL(X86Assembler& c)
+{
+	if (!g_state.is_super)
 	{
-		if (size_ == 256)
-		{
-			c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state_t::y_shift + 0), x86::ymm0);
-			c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state_t::y_shift + 32), x86::ymm1);
-		}
-		else
-		{
-			c.movaps(x86::oword_ptr(x86::r9, (((i & 0xfe) << 1) | i & 1) * (emu_state_t::y_shift / 2) + 0), x86::xmm0);
-			c.movaps(x86::oword_ptr(x86::r9, (((i & 0xfe) << 1) | i & 1) * (emu_state_t::y_shift / 2) + 16), x86::xmm1);
-		}
+		return asm_insts::UNK(c);
 	}
 
-	c.add(x86::r9, size_);
-	c.loop(_loop);
-	c.mov(args[0], x86::r9); // Set gfxMemory* as argument
-	c.call(imm_ptr(&::KickChip8Framebuffer));
-	c.mov(state, imm_ptr(&g_state));
+	c.mov(x86::byte_ptr(state, STATE_OFFS(extended)), (u8)false);
+
+	// TODO: is the screen cleared even when resolution didnt change?
+	CLS(c);
+}
+
+void asm_insts::RESH(X86Assembler& c)
+{
+	if (!g_state.is_super)
+	{
+		return asm_insts::UNK(c);
+	}
+
+	c.mov(x86::byte_ptr(state, STATE_OFFS(extended)), (u8)true);
+
+	// TODO: is the screen cleared even when resolution didnt change?
+	CLS(c);
 }
 
 void asm_insts::JP(X86Assembler& c)
@@ -332,11 +435,16 @@ void asm_insts::CALL(X86Assembler& c)
 	Label ok = c.newLabel();
 	c.cmp(x86::r8d, 16);
 	c.jne(ok);
-	c.jmp(imm_ptr(&asm_insts::UNK));
+	c.ud2();
+	c.db('O');
+	c.db('V');
+	c.db('E');
+	c.db('R');
+	c.int3();
 	c.bind(ok);
 #endif
 
-	c.mov(x86::dword_ptr(state, x86::r8, GET_SHIFT_MEMBER(stack), STATE_OFFS(stack)), pc.r32());
+	c.mov(x86::dword_ptr(state, x86::r8, ARR_SUBSCRIPT(stack)), pc.r32());
 	c.inc(x86::r8d);
 	c.mov(x86::dword_ptr(state, STATE_OFFS(sp)), x86::r8d);
 	c.mov(pc.r32(), opcode.r32());
@@ -433,9 +541,8 @@ void asm_insts::SUB(X86Assembler& c)
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.movzx(x86::r9d, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sub(x86::r8d, x86::r9d);
+	c.setns(refVF()); // TODO: Check order
 	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
-	c.shr(x86::r8w, 15);
-	c.mov(refVF(), x86::r8b);
 }
 
 void asm_insts::SHR(X86Assembler& c)
@@ -452,8 +559,8 @@ void asm_insts::RSB(X86Assembler& c)
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.movzx(x86::r9d, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sub(x86::r9d, x86::r8d);
+	c.setns(refVF()); // TODO: Check order
 	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r9b);
-	c.setns(refVF());
 }
 
 void asm_insts::SHL(X86Assembler& c)
@@ -495,8 +602,8 @@ void asm_insts::RND(X86Assembler& c)
 	c.mov(x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)), x86::al);
 }
 
-// This is an extremely accurate yet extremely fast implementation
-void asm_insts::DRW(X86Assembler& c)
+template<bool is_XDRW>
+static void form_DRW(X86Assembler& c)
 {
 	Label main_loop = c.newLabel();
 	Label skip_size0 = c.newLabel();
@@ -507,13 +614,40 @@ void asm_insts::DRW(X86Assembler& c)
 	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(index)));
 	c.lea(x86::r8, x86::ptr(state, x86::r8, 0, STATE_OFFS(memBase)));
 
-	getField<1>(c, x86::r9);
-	c.mov(x86::r9b, x86::byte_ptr(state, x86::r9, 0, STATE_OFFS(gpr)));
-	c.and_(x86::r9b, 0x1f);
-	c.shl(x86::r9d, flog2<u32, emu_state_t::y_shift>());
+	const bool is_super = g_state.is_super;
+	if (is_super)
+	{
+		// Load is_extended value
+		c.movzx(x86::ebx, x86::byte_ptr(state, STATE_OFFS(extended)));
+		c.mov(x86::r11b, x86::bl);
+		c.shl(x86::r11b, clog2<u32, 0x3f>()); // Shift it to the bit exactly after the end of 0x1f
+		c.or_(x86::r11b, 0x3f); // Now we OR it (to get 0x7f on extended mode)
+	}
+
 	getField<2>(c, x86::r10);
 	c.mov(x86::r10b, x86::byte_ptr(state, x86::r10, 0, STATE_OFFS(gpr)));
-	c.and_(x86::r10b, 0x3f);
+
+	// Apply x mask
+	if (is_super) 
+	{
+		c.and_(x86::r10d, x86::r11d);
+		c.shr(x86::r11d, 1); // In all modes x lines is twice as much as y lines
+	}
+	else
+	{
+		c.and_(x86::r10b, 0x3f);
+	}
+
+	getField<1>(c, x86::r9);
+	c.mov(x86::r9b, x86::byte_ptr(state, x86::r9, 0, STATE_OFFS(gpr)));
+
+	if (is_super) // Apply y mask
+		c.and_(x86::r9d, x86::r11d);
+	else
+		c.and_(x86::r9d, 0x1f);
+
+	// Constant value unchanged with modes
+	c.shl(x86::r9d, flog2<u32, emu_state::y_stride>());
 
 	// Vram offset
 	c.add(x86::r9d, x86::r10d);
@@ -523,43 +657,81 @@ void asm_insts::DRW(X86Assembler& c)
 	c.mov(x86::r14d, 1);
 
 	// Get lines amount
-	getField<0>(c, opcode);
-	c.je(skip_size0); // Flags set at getField, must check this
+	if (!is_XDRW)
+	{
+		getField<0>(c, opcode);
+		c.je(skip_size0); // Flags set at getField
+	}
+	else
+	{
+		c.mov(opcode.r32(), 16);
+	}
 
-	// Check if needs extended wrapping
 	c.mov(x86::r12d, opcode.r32());
-	c.shl(x86::r12d, flog2<u32, emu_state_t::y_shift>());
-	c.lea(x86::r12, x86::ptr(x86::r9, x86::r12, 0,  7));
-	c.test(x86::r12d, ~((u32)emu_state_t::xy_mask));
+	c.shl(x86::r12d, flog2<u32, emu_state::y_stride>());
+	c.lea(x86::r12, x86::ptr(x86::r9, x86::r12, 0, !is_XDRW ? 7 : 15));
+
+	if (is_super)
+	{
+		c.mov(x86::r15d, x86::ebx);
+		c.neg(x86::r15d); // = extended ? 0xFFFFFFFF : 0
+		c.and_(x86::r15d, (~(u32)emu_state::xy_mask) & emu_state::xy_mask_ex); // Get different bits in mask between modes and mask them
+		c.or_(x86::r15d, emu_state::xy_mask); // Get the actual mask
+		c.not_(x86::r15d);
+		c.test(x86::r12d, x86::r15d);
+	}
+	else
+	{
+		c.test(x86::r12d, ~((u32)emu_state::xy_mask));
+	}
+
 	c.jne(needs_wrapping);
 
 	// Get max ram address
-	c.lea(x86::rdx, x86::ptr(x86::r8, x86::rdx));
+	c.lea(x86::rdx, x86::ptr(x86::r8, x86::rdx, is_XDRW ? 1 : 0));
 	c.bind(main_loop);
 
-	// Load pixel value and decode it
-	c.movzx(x86::r10d, x86::byte_ptr(x86::r8));
-	c.mov(x86::r10, x86::qword_ptr(state, x86::r10, GET_SHIFT_MEMBER(DRWtable), STATE_OFFS(DRWtable)));
+	// XDRW consumes 2 bytes at a time
+	for (u32 i = 0; i < (is_XDRW ? 2 : 1); i++)
+	{
+		// Load pixel value and decode it
+		c.movzx(x86::r10d, x86::byte_ptr(x86::r8, i));
+		c.mov(x86::r10, x86::qword_ptr(state, x86::r10, ARR_SUBSCRIPT(DRWtable)));
 
-	// Load previous qword pixels state and test VF
-	c.mov(x86::r12, x86::qword_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory)));
-	c.test(x86::r10, x86::r12);
-	c.cmovne(x86::r11d, x86::r14d);
-	c.xor_(x86::r10, x86::r12);
-	c.mov(x86::qword_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory)), x86::r10);
+		// Load previous qword pixels state and test VF
+		c.mov(x86::r12, x86::qword_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory) + i * sizeof(u64)));
+		c.test(x86::r10, x86::r12);
+		c.cmovne(x86::r11d, x86::r14d);
+		c.xor_(x86::r10, x86::r12);
+		c.mov(x86::qword_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory) + i * sizeof(u64)), x86::r10);
+	}
 
-	c.inc(x86::r8);
-	c.add(x86::r9, emu_state_t::y_shift);
+	!is_XDRW ? c.inc(x86::r8) : c.lea(x86::r8, x86::ptr(x86::r8, 2));
+
+	c.add(x86::r9, emu_state::y_stride);
 	c.cmp(x86::r8, x86::rdx);
 	c.jne(main_loop);
 
 	c.bind(skip_size0);
 	c.mov(refVF(), x86::r11b);
 	c.lea(args[0], x86::ptr(state, STATE_OFFS(gfxMemory)));
-	c.call(imm_ptr(&::KickChip8Framebuffer));
+
+	if (is_super)
+	{
+		c.mov(opcode, imm_ptr(&::KickChip8Framebuffer));
+		c.test(x86::bl, 0x1);
+		c.mov(x86::rbx, imm_ptr(&::KickSChip8Framebuffer));
+		c.cmovne(opcode, x86::rbx);
+		c.call(opcode);
+	}
+	else
+	{
+		c.call(imm_ptr(&::KickChip8Framebuffer));
+	}
+
 	c.mov(state, imm_ptr(&g_state));
 
-	// Specilization for wrapping
+	// Specilization for wrapping (slow but accurate)
 	from_end = [=](X86Assembler& c)
 	{
 		Label wrap_loop = c.newLabel();
@@ -571,34 +743,79 @@ void asm_insts::DRW(X86Assembler& c)
 		c.lea(x86::rdx, x86::ptr(x86::r8, x86::rdx));
 		c.bind(wrap_loop);
 
-		// Load pixel value
-		c.movzx(x86::r10d, x86::byte_ptr(x86::r8));
-		c.test(x86::r10d, x86::r10d);
-		c.je(wrap_skip);
-
-		// Temp offset for clamping
-		c.mov(x86::r12d, x86::r9d);
-
-		// Unpack bits into pixels (unrolled loop)
-		for (u32 i = 0; i < 8; i++)
+		for (u32 p = 0; p < (is_XDRW ? 2 : 1); p++)
 		{
-			Label next = c.newLabel();
-			c.bt(x86::r10d, 7 - i);
-			c.jnc(next);
-			c.and_(x86::r12d, emu_state_t::xy_mask); // Wrap around y and x axises
-			c.xor_(x86::byte_ptr(state, x86::r12, 0, STATE_OFFS(gfxMemory)), 0xff);
-			c.cmove(x86::r11d, x86::r14d); // Set VF
-			c.bind(next);
-			c.inc(x86::r12d);
+			// Load pixel value
+			c.movzx(x86::r10d, x86::byte_ptr(x86::r8, p));
+			//c.test(x86::r10d, x86::r10d);
+			//c.je(wrap_skip);
+
+			// Temp offset for clamping
+			c.mov(x86::r12d, x86::r9d);
+
+			// Unpack bits into pixels (unrolled loop)
+			for (u32 i = 0; i < 8; i++)
+			{
+				Label next = c.newLabel();
+				c.bt(x86::r10d, 7 - i);
+				c.jnc(next);
+
+				if (is_super)
+				{
+					if (g_state.DRW_wrap)
+					{
+						c.and_(x86::r12d, x86::r15d);
+					}
+					else
+					{
+						c.test(x86::r12d, x86::r15d);
+						c.jne(next);
+					}
+
+				}
+				else
+				{
+					if (g_state.DRW_wrap)
+					{
+						c.and_(x86::r12d, emu_state::xy_mask);
+					}
+					else
+					{
+						c.test(x86::r12d, ~((u32)emu_state::xy_mask));
+						c.jne(next);
+					}
+				}
+
+				c.xor_(x86::byte_ptr(state, x86::r12, 0, STATE_OFFS(gfxMemory) + p * sizeof(u64)), 0xff);
+				c.cmove(x86::r11d, x86::r14d); // Set VF
+				c.bind(next);
+				c.inc(x86::r12d);
+			}
 		}
 
 		c.bind(wrap_skip);
-		c.inc(x86::r8);
-		c.add(x86::r9, emu_state_t::y_shift);
+		!is_XDRW ? c.inc(x86::r8) : c.lea(x86::r8, x86::ptr(x86::r8, 2));
+		c.add(x86::r9, emu_state::y_stride);
 		c.cmp(x86::r8, x86::rdx);
 		c.jne(wrap_loop);
 		c.jmp(skip_size0); // Return to normal instruction epilouge 
 	};
+}
+
+void asm_insts::DRW(X86Assembler& c)
+{
+	form_DRW<false>(c);
+}
+
+void asm_insts::XDRW(X86Assembler& c)
+{
+	if (!g_state.is_super)
+	{
+		// ???
+		return asm_insts::UNK(c);
+	}
+
+	form_DRW<true>(c);
 }
 
 void asm_insts::SKP(X86Assembler& c)
@@ -607,7 +824,7 @@ void asm_insts::SKP(X86Assembler& c)
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::r8, imm_ptr(&input::keyIDs));
-	c.movzx(args[0].r32(), x86::byte_ptr(x86::r8, x86::rdx, 0));
+	c.movzx(args[0].r32(), x86::byte_ptr(x86::r8, x86::rdx, GET_SHIFT_ARR(input::keyIDs)));
 	c.call(imm_ptr(&::GetKeyState));
 	c.mov(state, imm_ptr(&g_state));
 	c.shr(retn.r16(), 16 - 1); // If pressed, contains 1 otherwise 0
@@ -621,7 +838,7 @@ void asm_insts::SKNP(X86Assembler& c)
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::r8, imm_ptr(&input::keyIDs));
-	c.movzx(args[0].r32(), x86::byte_ptr(x86::r8, x86::rdx, 0));
+	c.movzx(args[0].r32(), x86::byte_ptr(x86::r8, x86::rdx, GET_SHIFT_ARR(input::keyIDs)));
 	c.call(imm_ptr(&::GetKeyState));
 	c.mov(state, imm_ptr(&g_state));
 	c.shr(retn.r16(), 16 - 1);
@@ -664,10 +881,9 @@ void asm_insts::SetS(X86Assembler& c)
 
 void asm_insts::AddIndex(X86Assembler& c)
 {
-	getField<2>(c, x86::r8);
+	getField<2>(c, opcode);
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.add(x86::edx, x86::dword_ptr(state, STATE_OFFS(index)));
-	c.and_(x86::edx, 0xfff);
 	c.mov(x86::dword_ptr(state, STATE_OFFS(index)), x86::edx);
 }
 
@@ -704,17 +920,15 @@ void asm_insts::STR(X86Assembler& c)
 {
 	getField<2>(c, opcode);
 	c.inc(opcode.r8());
-	c.mov(x86::r8, state); // Save state, rsi and rdi (non-volatile registers)
-	c.mov(x86::r9, x86::rsi);
-	c.mov(x86::r10, x86::rdi);
+	c.mov(x86::r8, state); // Save state
 	c.mov(x86::ecx, opcode.r32());
 	c.mov(x86::edi, x86::dword_ptr(x86::r8, STATE_OFFS(index)));
 	c.lea(x86::rdi, x86::ptr(x86::r8, x86::rdi, 0, STATE_OFFS(memBase)));
 	c.lea(x86::rsi, x86::ptr(x86::r8, STATE_OFFS(gpr)));
 	c.rep().movsb();
 	c.mov(state, x86::r8);
-	c.mov(x86::rsi, x86::r9);
-	c.mov(x86::rdi, x86::r10);
+	if (g_state.is_super)
+		c.and_(opcode.r32(), x86::dword_ptr(state, STATE_OFFS(compatibilty))); // Zero out if compat flag is false
 	c.add(x86::dword_ptr(state, STATE_OFFS(index)), opcode.r32());
 }
 
@@ -723,16 +937,14 @@ void asm_insts::LDR(X86Assembler& c)
 	getField<2>(c, opcode);
 	c.inc(opcode.r8());
 	c.mov(x86::r8, state);
-	c.mov(x86::r9, x86::rsi);
-	c.mov(x86::r10, x86::rdi);
 	c.mov(x86::ecx, opcode.r32());
 	c.mov(x86::esi, x86::dword_ptr(x86::r8, STATE_OFFS(index)));
 	c.lea(x86::rsi, x86::ptr(x86::r8, x86::rsi, 0, STATE_OFFS(memBase)));
 	c.lea(x86::rdi, x86::ptr(x86::r8, STATE_OFFS(gpr)));
 	c.rep().movsb();
 	c.mov(state, x86::r8);
-	c.mov(x86::rsi, x86::r9);
-	c.mov(x86::rdi, x86::r10);
+	if (g_state.is_super)
+		c.and_(opcode.r32(), x86::dword_ptr(state, STATE_OFFS(compatibilty))); // Zero out if compat flag is false
 	c.add(x86::dword_ptr(state, STATE_OFFS(index)), opcode.r32());
 }
 
@@ -741,27 +953,16 @@ void asm_insts::UNK(X86Assembler& c)
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
 	c.mov(opcode, opcode);
 
-#ifdef DEBUG_INSTS
-	c.int3();
-#else
 	c.ud2();
-#endif
+	c.db('U');
+	c.db('N');
+	c.db('K');
+	c.int3();
 }
 
 void asm_insts::guard(X86Assembler& c)
 {
-	Label ok = c.newLabel();
-	c.cmp(pc.r16(), 0x1000);
-
-#ifndef DEBUG_INSTS
-	//TODO: logging of such event
-	c.je(ok);
-#endif
-	c.jmp(imm_ptr(&asm_insts::UNK));
-
-	// Reset pc
-	c.bind(ok);
-	c.xor_(pc.r32(), pc.r32());
+	UNK(c);
 }
 
 DECLARE(asm_insts::entry);
@@ -773,3 +974,4 @@ DECLARE(asm_insts::entry);
 #undef GET_SHIFT
 #undef GET_SHIFT_ARR
 #undef GET_SHIFT_MEMBER
+#undef ARR_SUBSCRIPT

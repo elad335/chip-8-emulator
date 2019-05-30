@@ -8,12 +8,10 @@ struct alignas(2) time_control_t
 	u8 delay;
 };
 
-struct emu_state_t
+struct emu_state
 {
 	// The RAM (4k + instruction flow guard)
 	alignas(16) u8 memBase[4096 + 2];
-	// Video memory (64*32 pixels, see DRW for details)
-	alignas(32) u8 gfxMemory[64 * 32 * 2];
 	// Registers
 	u8 gpr[16];
 	// Stack
@@ -32,14 +30,18 @@ struct emu_state_t
 	std::thread* volatile hwtimers;
 	// DRW pixel decoding lookup table
 	u64 DRWtable[UINT8_MAX + 1]; 
-	// compatibilty flag for schip 8 (don't confuse with is_super)
-	bool compatibilty = false;
+	// compatibilty flag (mask) for schip 8 (don't confuse with is_super)
+	u32 compatibilty = 0;
+	// Video mode
+	bool extended = false;
 	// Asmjit/Interpreter: function table
 	std::uintptr_t ops[UINT16_MAX + 1];
 	// Settings section: sleep between instructions in ms
 	u64 sleep_period = 16;
 	// Is schip 8 boolean
 	bool is_super = false;
+	// DRW wrapping
+	bool DRW_wrap = true;
 	// Opcodes simple fallbacks
 	void OpcodeFallback();
 	// Reset registers
@@ -50,9 +52,16 @@ struct emu_state_t
 	u8& getVF();
 
 	// Framebuffer swizzling constants
-	static constexpr size_t y_shift = 128;
-	static constexpr size_t x_shift = 1;
-	static constexpr size_t xy_mask = (0x1fu * y_shift) | (0x3fu * x_shift);
+	static constexpr size_t y_stride = 256;
+	static constexpr size_t y_size_ex = 64;
+	static constexpr size_t x_size_ex = 128;
+	static constexpr size_t y_size = 32;
+	static constexpr size_t x_size = 64;
+	static constexpr size_t xy_mask = (0x1f * y_stride) | (0x3f);
+	static constexpr size_t xy_mask_ex = (0x3f * y_stride) | (0x7f);
+
+	// Video memory (64*32 pixels, see DRW for details)
+	alignas(32) u8 gfxMemory[y_stride * y_size_ex];
 
 	// Emulated CPU memory control
 	template<typename T>
@@ -80,7 +89,7 @@ struct emu_state_t
 	}
 };
 
-extern emu_state_t g_state;
+extern emu_state g_state;
 
 template<size_t _index, bool is_be = false>
 static inline u8 getField(u16 opcode)
