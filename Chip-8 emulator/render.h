@@ -6,6 +6,7 @@
 
 void InitWindow();
 void KickChip8Framebuffer(void* pixels);
+void KickSChip8Framebuffer(void* pixels);
 void KickFramebuffer(GLsizei width, GLsizei height, const void *pixels, GLenum type, GLint internalformat, GLenum format);
 
 GLuint LoadShaders(const char* vertex_shader, const char* fragment_shader);

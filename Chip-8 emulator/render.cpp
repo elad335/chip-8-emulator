@@ -258,22 +258,34 @@ GLuint load2DTexture(GLhandler& handler, GLsizei width, GLsizei height, const vo
 	return handler.id;
 }
 
+// Intermediate buffer for swizzled buffer translation
+static u8 interBuffer[emu_state::y_size_ex * emu_state::x_size_ex]{};
+
 void KickChip8Framebuffer(void* pixels)
 {
-	constexpr u32 height = 32, width = 64;
-	static u8 interBuffer[height * width]{};
-
 	// Translate swizzled buffer into raw rgba buffer
 
 	// Y0 is the original's buffer, y1 is the destination's
-	for (u32 y0 = 0, y1 = 0; y1 < std::size(interBuffer); y1 += width, y0 += emu_state_t::y_shift)
+	for (u32 y0 = 0, y1 = 0; y1 < emu_state::y_size * emu_state::x_size; y1 += emu_state::x_size, y0 += emu_state::y_stride)
 	{
 		// TODO: This can be further optimzed with asmjit
-		std::memcpy(interBuffer + y1, (u8*)pixels + y0, width);
+		std::memcpy(interBuffer + y1, (u8*)pixels + y0, emu_state::x_size);
 	}
 
 	// Here we bind red channel only, but modify it in the fragment shader into black and white!
-	KickFramebuffer(width, height, +interBuffer, GL_UNSIGNED_BYTE, GL_R8, GL_RED);
+	KickFramebuffer(emu_state::x_size, emu_state::y_size, interBuffer, GL_UNSIGNED_BYTE, GL_R8, GL_RED);
+}
+
+void KickSChip8Framebuffer(void* pixels)
+{
+	for (u32 y0 = 0, y1 = 0; y1 < emu_state::y_size_ex * emu_state::x_size_ex; y1 += emu_state::x_size_ex, y0 += emu_state::y_stride)
+	{
+		// TODO: This can be further optimzed with asmjit
+		std::memcpy(interBuffer + y1, (u8*)pixels + y0, emu_state::x_size_ex);
+	}
+
+	// Here we bind red channel only, but modify it in the fragment shader into black and white!
+	KickFramebuffer(emu_state::x_size_ex, emu_state::y_size_ex, interBuffer, GL_UNSIGNED_BYTE, GL_R8, GL_RED);
 }
 
 // TODO: Investigate vulkan implemntation
