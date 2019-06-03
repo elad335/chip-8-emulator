@@ -55,10 +55,10 @@ DECLARE(asm_insts::all_ops) =
 	{0xFFFF, 0xFFFF, true , &asm_insts::guard}
 };
 
-// Shared instruction handlers opcodes (TODO: implement for code saving)
+// Shared instruction handlers opcodes (TODO: use more opcodes?)
 enum s_ops : uptr
 {
-	CLS = 0x00EEu,
+	CLS = 0x00E0u,
 	UNK = 0xFFFFu,
 };
 
@@ -100,9 +100,11 @@ static std::function<void(X86Assembler&)> from_end{};
 // Addressing helpers:
 // Get offset shift by type (size must be 1, 2, 4, or 8)
 #define GET_SHIFT(x) (::flog2<sizeof(x)>())
-#define GET_SHIFT_ARR(x) (::flog2<sizeof(std::remove_extent_t<decltype(x)>)>())
+#define GET_ELEM_SIZE(x) sizeof(std::remove_extent_t<decltype(x)>)
+#define GET_SIZE_MEM(x) GET_ELEM_SIZE(emu_state::##x)
+#define GET_SHIFT_ARR(x) (::flog2<GET_ELEM_SIZE(x)>())
 #define GET_SHIFT_MEMBER(x) (GET_SHIFT_ARR(emu_state::##x)) 
-#define ARR_SUBSCRIPT(x) (GET_SHIFT_ARR(emu_state::##x)), STATE_OFFS(x)
+#define ARR_SUBSCRIPT(x) GET_SHIFT_ARR(emu_state::##x), STATE_OFFS(x)
 //#define get_u256 x86::yword_ptr
 //#define get_u128 x86::oword_ptr
 //#define get_u64 x86::qword_ptr
@@ -378,7 +380,7 @@ void asm_insts::Compat(X86Assembler& c)
 {
 	if (!g_state.is_super)
 	{
-		return asm_insts::UNK(c);
+		c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::UNK * GET_SIZE_MEM(ops)));
 	}
 
 	c.mov(x86::byte_ptr(state, STATE_OFFS(compatibilty)), 0u - 1u);
@@ -397,26 +399,26 @@ void asm_insts::RESL(X86Assembler& c)
 {
 	if (!g_state.is_super)
 	{
-		return asm_insts::UNK(c);
+		c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::UNK * GET_SIZE_MEM(ops)));
 	}
 
 	c.mov(x86::byte_ptr(state, STATE_OFFS(extended)), (u8)false);
 
 	// TODO: is the screen cleared even when resolution didnt change?
-	CLS(c);
+	c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::CLS * GET_SIZE_MEM(ops)));
 }
 
 void asm_insts::RESH(X86Assembler& c)
 {
 	if (!g_state.is_super)
 	{
-		return asm_insts::UNK(c);
+		c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::UNK * GET_SIZE_MEM(ops)));
 	}
 
 	c.mov(x86::byte_ptr(state, STATE_OFFS(extended)), (u8)true);
 
 	// TODO: is the screen cleared even when resolution didnt change?
-	CLS(c);
+	c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::CLS * GET_SIZE_MEM(ops)));
 }
 
 void asm_insts::JP(X86Assembler& c)
@@ -812,7 +814,7 @@ void asm_insts::XDRW(X86Assembler& c)
 	if (!g_state.is_super)
 	{
 		// ???
-		return asm_insts::UNK(c);
+		c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::UNK * GET_SIZE_MEM(ops)));
 	}
 
 	form_DRW<true>(c);
@@ -973,5 +975,7 @@ DECLARE(asm_insts::entry);
 #undef STACK_RESERVE
 #undef GET_SHIFT
 #undef GET_SHIFT_ARR
+#undef GET_ARR_SIZE
+#undef GET_SIZE_MEM
 #undef GET_SHIFT_MEMBER
 #undef ARR_SUBSCRIPT
