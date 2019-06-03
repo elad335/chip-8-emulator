@@ -99,8 +99,8 @@ static std::function<void(X86Assembler&)> from_end{};
 
 // Addressing helpers:
 // Get offset shift by type (size must be 1, 2, 4, or 8)
-#define GET_SHIFT(x) (::flog2<u32, sizeof(x)>())
-#define GET_SHIFT_ARR(x) (::flog2<u32, sizeof(std::remove_extent_t<decltype(x)>)>())
+#define GET_SHIFT(x) (::flog2<sizeof(x)>())
+#define GET_SHIFT_ARR(x) (::flog2<sizeof(std::remove_extent_t<decltype(x)>)>())
 #define GET_SHIFT_MEMBER(x) (GET_SHIFT_ARR(emu_state::##x)) 
 #define ARR_SUBSCRIPT(x) (GET_SHIFT_ARR(emu_state::##x)), STATE_OFFS(x)
 //#define get_u256 x86::yword_ptr
@@ -620,7 +620,7 @@ static void form_DRW(X86Assembler& c)
 		// Load is_extended value
 		c.movzx(x86::ebx, x86::byte_ptr(state, STATE_OFFS(extended)));
 		c.mov(x86::r11b, x86::bl);
-		c.shl(x86::r11b, clog2<u32, 0x3f>()); // Shift it to the bit exactly after the end of 0x1f
+		c.shl(x86::r11b, clog2<0x3f>()); // Shift it to the bit exactly after the end of 0x1f
 		c.or_(x86::r11b, 0x3f); // Now we OR it (to get 0x7f on extended mode)
 	}
 
@@ -647,7 +647,7 @@ static void form_DRW(X86Assembler& c)
 		c.and_(x86::r9d, 0x1f);
 
 	// Constant value unchanged with modes
-	c.shl(x86::r9d, flog2<u32, emu_state::y_stride>());
+	c.shl(x86::r9d, flog2<emu_state::y_stride>());
 
 	// Vram offset
 	c.add(x86::r9d, x86::r10d);
@@ -668,7 +668,7 @@ static void form_DRW(X86Assembler& c)
 	}
 
 	c.mov(x86::r12d, opcode.r32());
-	c.shl(x86::r12d, flog2<u32, emu_state::y_stride>());
+	c.shl(x86::r12d, flog2<emu_state::y_stride>());
 	c.lea(x86::r12, x86::ptr(x86::r9, x86::r12, 0, !is_XDRW ? 7 : 15));
 
 	if (is_super)
