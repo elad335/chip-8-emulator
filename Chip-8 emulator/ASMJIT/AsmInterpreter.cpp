@@ -160,6 +160,19 @@ static void fallback(X86Assembler& c)
 	std::exit(-1);
 }*/
 
+// Try to emit a loop instruction
+// loop instruction uses Imm8 for relative so it may fail if distance is too long
+// If that happens use dec ecx + jne instead
+static void try_loop(X86Assembler& c, Label& label)
+{
+	if (c.loop(label) != ErrorCode::kErrorOk)
+	{
+		c.resetLastError(); // Must reset
+		c.dec(x86::ecx);
+		c.jne(label);
+	}
+}
+
 static asmjit::X86Mem refVF()
 {
 	// The 15 register
@@ -290,24 +303,20 @@ decltype(asm_insts::entry) asm_insts::build_entry()
 
 void asm_insts::CLS(X86Assembler& c)
 {
-	if (!::has_avx())
-	{
-		// TODO
-		c.ud2();
-		c.db('C');
-		c.db('L');
-		c.db('S');
-		c.int3();
-		return;
-	}
-
-	Label loop_ = c.newLabel();
-	Label loop_ex = c.newLabel();
 	Label extended_mode = c.newLabel();
 	Label end = c.newLabel();
 
-	c.vxorps(x86::ymm0, x86::ymm0, x86::ymm0);
-	c.vmovaps(x86::ymm1, x86::ymm0);
+	if (::has_avx)
+	{
+		// Try to use AVX if possible
+		c.vxorps(x86::ymm0, x86::ymm0, x86::ymm0);
+		c.vmovaps(x86::ymm1, x86::ymm0);
+	}
+	else
+	{
+		c.xorps(x86::xmm0, x86::xmm0);
+		c.movaps(x86::xmm1, x86::xmm0);
+	}
 
 	c.lea(x86::r9, x86::ptr(state, STATE_OFFS(gfxMemory)));
 
@@ -317,39 +326,63 @@ void asm_insts::CLS(X86Assembler& c)
 		c.jne(extended_mode);
 	}
 
-	c.mov(x86::ecx, (emu_state::y_stride * emu_state::y_size) / 256);
-	c.bind(loop_);
-
-	// Use out-of-order execution by using more than one register
-	for (u32 i = 0; i < 4; i++)
+	// Simply generate the two modes handlers at once
+	for (size_t extended = 0, y_size = emu_state::y_size;; extended = 1, y_size *= 2)
 	{
-		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 0), x86::ymm0);
-		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 32), x86::ymm1);
+		Label loop_ = c.newLabel();
+
+		c.mov(x86::ecx, (emu_state::y_stride * y_size) / 256);
+		c.bind(loop_);
+
+		// Use out-of-order execution by using more than one register
+		for (u32 i = 0; i < (!extended ? 4 : 2); i++)
+		{
+			if (::has_avx())
+			{
+				c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 0), x86::ymm0);
+				c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 32), x86::ymm1);
+
+				if (extended)
+				{
+					c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 64), x86::ymm0);
+					c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 96), x86::ymm1);
+				}
+			}
+			else
+			{
+				c.movaps(x86::oword_ptr(x86::r9, i * emu_state::y_stride + 0), x86::xmm0);
+				c.movaps(x86::oword_ptr(x86::r9, i * emu_state::y_stride + 16), x86::xmm1);
+				c.movaps(x86::oword_ptr(x86::r9, i * emu_state::y_stride + 32), x86::xmm0);
+				c.movaps(x86::oword_ptr(x86::r9, i * emu_state::y_stride + 48), x86::xmm1);
+
+				if (extended)
+				{
+					c.movaps(x86::oword_ptr(x86::r9, i * emu_state::y_stride + 64), x86::xmm0);
+					c.movaps(x86::oword_ptr(x86::r9, i * emu_state::y_stride + 80), x86::xmm1);
+					c.movaps(x86::oword_ptr(x86::r9, i * emu_state::y_stride + 96), x86::xmm0);
+					c.movaps(x86::oword_ptr(x86::r9, i * emu_state::y_stride + 112), x86::xmm1);
+				}
+			}
+		}
+
+		c.add(x86::r9, 256); // Fill 256 bytes each loop
+		try_loop(c, loop_);
+
+		c.mov(args[0], (std::uintptr_t)&g_state + (u64)STATE_OFFS(gfxMemory)); // Set gfxMemory* as argument
+		c.call(imm_ptr(std::addressof(extended ? ::KickSChip8Framebuffer : ::KickChip8Framebuffer)));
+
+		if (extended != 0 || !g_state.is_super)
+		{
+			// Don't generate extended mode handler for non-super
+			break;
+		}
+
+		// Bind extended mode label at the middle, skip if non-extended
+		c.jmp(end);
+		c.align(kAlignData, 16);
+		c.bind(extended_mode);
 	}
 
-	c.add(x86::r9, 256); // Fill 256 bytes each loop
-	c.loop(loop_);
-	c.mov(args[0], (std::uintptr_t)&g_state +(u64)STATE_OFFS(gfxMemory)); // Set gfxMemory* as argument
-	c.call(imm_ptr(&::KickChip8Framebuffer));
-	c.jmp(end);
-	c.align(kAlignData, 16);
-	c.bind(extended_mode);
-
-	c.mov(x86::ecx, (emu_state::y_stride * emu_state::y_size_ex) / 256);
-	c.bind(loop_ex);
-
-	for (u32 i = 0; i < 2; i++)
-	{
-		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 0), x86::ymm0);
-		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 32), x86::ymm1);
-		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 64), x86::ymm0);
-		c.vmovaps(x86::yword_ptr(x86::r9, i * emu_state::y_stride + 96), x86::ymm1);
-	}
-
-	c.add(x86::r9, 256);
-	c.loop(loop_ex);
-	c.mov(args[0], (std::uintptr_t)&g_state + (u64)STATE_OFFS(gfxMemory));
-	c.call(imm_ptr(&::KickSChip8Framebuffer));
 	c.bind(end);
 	c.mov(state, imm_ptr(&g_state));
 }
@@ -386,13 +419,65 @@ void asm_insts::Compat(X86Assembler& c)
 	c.mov(x86::byte_ptr(state, STATE_OFFS(compatibilty)), 0u - 1u);
 }
 
+// Builder for SCR and SCL
+template<bool is_SCR>
+static void form_SCRL(X86Assembler& c)
+{
+	if (!g_state.is_super)
+	{
+		c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::UNK * GET_SIZE_MEM(ops)));
+	}
+
+	Label extended_mode = c.newLabel();
+	Label end = c.newLabel();
+
+	const X86Gp& source = is_SCR ? x86::rsi : x86::rdi;
+	const X86Gp& dest = is_SCR ? x86::rdi : x86::rsi;
+	c.lea(source, x86::ptr(state, STATE_OFFS(gfxMemory)));
+	c.lea(dest, x86::ptr(state, STATE_OFFS(gfxMemory) + sizeof(u32))); // Offset 4 pixels destintion
+	c.cmp(x86::byte_ptr(state, STATE_OFFS(extended)), (u8)true);
+	c.je(extended_mode);
+
+	// Simply generate the two modes handlers at once
+	for (size_t extended = 0, y_size = emu_state::y_size, x_size = emu_state::x_size;; extended = 1, y_size *= 2, x_size *= 2)
+	{
+		Label loop_ = c.newLabel();
+
+		c.mov(x86::r8d, y_size);
+		c.bind(loop_);
+		c.mov(x86::ecx, (x_size - 4) / sizeof(u32)); // move bytes in dwords
+		c.rep().movsd();
+		c.mov(x86::dword_ptr(dest, is_SCR ? 0 - s32(y_size) : s32(-4)), 0); // Place zeroes on the edge of the screen
+		c.add(source, emu_state::y_stride - (x_size - 4));
+		c.add(dest, emu_state::y_stride - (x_size - 4));
+		c.dec(x86::r8d);
+		c.jne(loop_);
+
+		c.mov(args[0], (std::uintptr_t)&g_state + (u64)STATE_OFFS(gfxMemory)); // Set gfxMemory* as argument
+		c.call(imm_ptr(std::addressof(extended ? ::KickSChip8Framebuffer : ::KickChip8Framebuffer)));
+
+		if (extended != 0)
+		{
+			break;
+		}
+
+		// Bind extended mode label
+		c.jmp(end);
+		c.align(kAlignCode, 16);
+		c.bind(extended_mode);
+	}
+
+	c.bind(end);
+	c.mov(state, imm_ptr(&g_state));
+}
+
 void asm_insts::SCR(X86Assembler& c)
 {
-	c.ud2();
+	form_SCRL<true>(c);
 }
 void asm_insts::SCL(X86Assembler& c)
 {
-	c.ud2();
+	form_SCRL<false>(c);
 }
 
 void asm_insts::RESL(X86Assembler& c)
