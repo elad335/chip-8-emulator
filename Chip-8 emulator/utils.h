@@ -310,34 +310,49 @@ static inline u32 clog2(u32 value) // Ceil log2
 }
 
 // Constexpr log2 varients (<3)
-template<typename T, T value>
-static inline constexpr T flog2()
+template<umax_t value>
+static inline constexpr u8 flog2()
 {
-	std::make_unsigned_t<T> value_ = static_cast<std::make_unsigned_t<T>>(value);
+	umax_t value_ = value;
 
-	for (size_t i = (sizeof(T) * 8) - 1; i >= 0; i--, value_ <<= 1)
+	value_ >>= 1;
+
+	for (u8 i = 0;; i++, value_ >>= 1)
 	{
-		if (value_ & (static_cast<std::make_unsigned_t<T>>(std::numeric_limits<std::make_signed_t<T>>::min())))
+		if (value_ == 0)
 		{
 			return i;
 		}
 	}
-
-	return 0;
 }
 
-template<typename T, T value>
-static inline constexpr T clog2()
+template<umax_t value>
+static inline constexpr u8 clog2()
 {
-	std::make_unsigned_t<T> value_ = static_cast<std::make_unsigned_t<T>>(value);
+	umax_t value_ = value;
+	const umax_t ispow2 = value_ & (value_ - 1); // if power of 2 the result is 0
 
-	for (size_t i = (sizeof(T) * 8) - 1; i >= 0; i--, value_ <<= 1)
+	value_ >>= 1;
+
+	for (u8 i = 0;; i++, value_ >>= 1)
 	{
-		if (value_ & (static_cast<std::make_unsigned_t<T>>(std::numeric_limits<std::make_signed_t<T>>::min())))
+		if (value_ == 0)
 		{
-			return i + T((value_ & static_cast<std::make_unsigned_t<T>>(std::numeric_limits<std::make_signed_t<T>>::max())) != 0);
+			return i + (u8)std::min<umax_t>(ispow2, 1);
 		}
 	}
+}
 
-	return 0;
+// Guarenteed zero extension regardless of the sign f the source and destination types
+template<typename To, typename From>
+static inline constexpr To zext(const From& from)
+{
+	return static_cast<To>(static_cast<std::make_unsigned_t<To>(static_cast<std::make_unsigned_t<From>>(from)));
+}
+
+// Guarenteed sign extension regardless of the sign f the source and destination types
+template<typename To, typename From>
+static inline constexpr To sext(const From& from)
+{
+	return static_cast<To>(static_cast<std::make_signed_t<To>(static_cast<std::make_signed_t<From>(from)));
 }
