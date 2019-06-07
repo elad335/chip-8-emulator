@@ -105,6 +105,7 @@ static std::function<void(X86Assembler&)> from_end{};
 #define GET_SHIFT_ARR(x) (::flog2<GET_ELEM_SIZE(x)>())
 #define GET_SHIFT_MEMBER(x) (GET_SHIFT_ARR(emu_state::##x)) 
 #define ARR_SUBSCRIPT(x) GET_SHIFT_ARR(emu_state::##x), STATE_OFFS(x)
+#define lea_ptr x86::qword_ptr
 //#define get_u256 x86::yword_ptr
 //#define get_u128 x86::oword_ptr
 //#define get_u64 x86::qword_ptr
@@ -318,7 +319,7 @@ void asm_insts::CLS(X86Assembler& c)
 		c.movaps(x86::xmm1, x86::xmm0);
 	}
 
-	c.lea(x86::r9, x86::ptr(state, STATE_OFFS(gfxMemory)));
+	c.lea(x86::r9, lea_ptr(state, STATE_OFFS(gfxMemory)));
 
 	if (g_state.is_super)
 	{
@@ -433,8 +434,8 @@ static void form_SCRL(X86Assembler& c)
 
 	const X86Gp& source = is_SCR ? x86::rsi : x86::rdi;
 	const X86Gp& dest = is_SCR ? x86::rdi : x86::rsi;
-	c.lea(source, x86::ptr(state, STATE_OFFS(gfxMemory)));
-	c.lea(dest, x86::ptr(state, STATE_OFFS(gfxMemory) + sizeof(u32))); // Offset 4 pixels destintion
+	c.lea(source, lea_ptr(state, STATE_OFFS(gfxMemory)));
+	c.lea(dest, lea_ptr(state, STATE_OFFS(gfxMemory) + sizeof(u32))); // Offset 4 pixels destintion
 	c.cmp(x86::byte_ptr(state, STATE_OFFS(extended)), (u8)true);
 	c.je(extended_mode);
 
@@ -543,7 +544,7 @@ void asm_insts::SEi(X86Assembler& c)
 	getField<2>(c, opcode);
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sete(x86::dl);
-	c.lea(pc, x86::ptr(pc, x86::rdx, 1, 2));
+	c.lea(pc, lea_ptr(pc, x86::rdx, 1, 2));
 }
 
 void asm_insts::SNEi(X86Assembler& c)
@@ -552,7 +553,7 @@ void asm_insts::SNEi(X86Assembler& c)
 	getField<2>(c, opcode);
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.setne(x86::dl);
-	c.lea(pc, x86::ptr(pc, x86::rdx, 1, 2));
+	c.lea(pc, lea_ptr(pc, x86::rdx, 1, 2));
 }
 
 void asm_insts::SE(X86Assembler& c)
@@ -562,7 +563,7 @@ void asm_insts::SE(X86Assembler& c)
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sete(x86::dl);
-	c.lea(pc, x86::ptr(pc, x86::rdx, 1, 2)); // pc += (equal ? 2 : 0) + 2
+	c.lea(pc, lea_ptr(pc, x86::rdx, 1, 2)); // pc += (equal ? 2 : 0) + 2
 }
 
 void asm_insts::WRI(X86Assembler& c)
@@ -664,7 +665,7 @@ void asm_insts::SNE(X86Assembler& c)
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.setne(x86::dl);
-	c.lea(pc, x86::ptr(pc, x86::rdx, 1, 2)); // pc += (nequal ? 2 : 0) + 2
+	c.lea(pc, lea_ptr(pc, x86::rdx, 1, 2)); // pc += (nequal ? 2 : 0) + 2
 }
 
 void asm_insts::SetIndex(X86Assembler& c)
@@ -677,7 +678,7 @@ void asm_insts::JPr(X86Assembler& c)
 {
 	c.movzx(opcode.r32(), opcode.r16());
 	c.movzx(x86::r8d, x86::byte_ptr(state, STATE_OFFS(gpr) + 0));
-	c.lea(pc.r32(), x86::ptr(opcode, x86::r8d));
+	c.lea(pc.r32(), lea_ptr(opcode, x86::r8d));
 }
 
 void asm_insts::RND(X86Assembler& c)
@@ -699,7 +700,7 @@ static void form_DRW(X86Assembler& c)
 
 	// Ram pointer
 	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(index)));
-	c.lea(x86::r8, x86::ptr(state, x86::r8, 0, STATE_OFFS(memBase)));
+	c.lea(x86::r8, lea_ptr(state, x86::r8, 0, STATE_OFFS(memBase)));
 
 	const bool is_super = g_state.is_super;
 	if (is_super)
@@ -756,7 +757,7 @@ static void form_DRW(X86Assembler& c)
 
 	c.mov(x86::r12d, opcode.r32());
 	c.shl(x86::r12d, flog2<emu_state::y_stride>());
-	c.lea(x86::r12, x86::ptr(x86::r9, x86::r12, 0, !is_XDRW ? 7 : 15));
+	c.lea(x86::r12, lea_ptr(x86::r9, x86::r12, 0, !is_XDRW ? 7 : 15));
 
 	if (is_super)
 	{
@@ -775,7 +776,7 @@ static void form_DRW(X86Assembler& c)
 	c.jne(needs_wrapping);
 
 	// Get max ram address
-	c.lea(x86::rdx, x86::ptr(x86::r8, x86::rdx, is_XDRW ? 1 : 0));
+	c.lea(x86::rdx, lea_ptr(x86::r8, x86::rdx, is_XDRW ? 1 : 0));
 	c.bind(main_loop);
 
 	// XDRW consumes 2 bytes at a time
@@ -793,7 +794,7 @@ static void form_DRW(X86Assembler& c)
 		c.mov(x86::qword_ptr(state, x86::r9, 0, STATE_OFFS(gfxMemory) + i * sizeof(u64)), x86::r10);
 	}
 
-	!is_XDRW ? c.inc(x86::r8) : c.lea(x86::r8, x86::ptr(x86::r8, 2));
+	!is_XDRW ? c.inc(x86::r8) : c.lea(x86::r8, lea_ptr(x86::r8, 2));
 
 	c.add(x86::r9, emu_state::y_stride);
 	c.cmp(x86::r8, x86::rdx);
@@ -801,7 +802,7 @@ static void form_DRW(X86Assembler& c)
 
 	c.bind(skip_size0);
 	c.mov(refVF(), x86::r11b);
-	c.lea(args[0], x86::ptr(state, STATE_OFFS(gfxMemory)));
+	c.lea(args[0], lea_ptr(state, STATE_OFFS(gfxMemory)));
 
 	if (is_super)
 	{
@@ -827,7 +828,7 @@ static void form_DRW(X86Assembler& c)
 		c.bind(needs_wrapping);
 
 		// Get max ram address
-		c.lea(x86::rdx, x86::ptr(x86::r8, x86::rdx));
+		c.lea(x86::rdx, lea_ptr(x86::r8, x86::rdx));
 		c.bind(wrap_loop);
 
 		for (u32 p = 0; p < (is_XDRW ? 2 : 1); p++)
@@ -881,7 +882,7 @@ static void form_DRW(X86Assembler& c)
 		}
 
 		c.bind(wrap_skip);
-		!is_XDRW ? c.inc(x86::r8) : c.lea(x86::r8, x86::ptr(x86::r8, 2));
+		!is_XDRW ? c.inc(x86::r8) : c.lea(x86::r8, lea_ptr(x86::r8, 2));
 		c.add(x86::r9, emu_state::y_stride);
 		c.cmp(x86::r8, x86::rdx);
 		c.jne(wrap_loop);
@@ -916,7 +917,7 @@ void asm_insts::SKP(X86Assembler& c)
 	c.mov(state, imm_ptr(&g_state));
 	c.shr(retn.r16(), 16 - 1); // If pressed, contains 1 otherwise 0
 	c.movzx(retn.r32(), retn.r8());
-	c.lea(pc, x86::ptr(pc, retn, 1, 2));
+	c.lea(pc, lea_ptr(pc, retn, 1, 2));
 }
 
 void asm_insts::SKNP(X86Assembler& c)
@@ -931,7 +932,7 @@ void asm_insts::SKNP(X86Assembler& c)
 	c.shr(retn.r16(), 16 - 1);
 	c.xor_(retn.r8(), 1);
 	c.movzx(retn.r32(), retn.r8());
-	c.lea(pc, x86::ptr(pc, retn, 1, 2));
+	c.lea(pc, lea_ptr(pc, retn, 1, 2));
 }
 
 void asm_insts::GetD(X86Assembler& c)
@@ -993,7 +994,7 @@ void asm_insts::STD(X86Assembler& c)
 	c.mov(x86::dl, 100);
 	c.div(x86::dl);
 	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(index)));
-	c.lea(x86::r8, x86::ptr(state, x86::r8, 0, STATE_OFFS(memBase)));
+	c.lea(x86::r8, lea_ptr(state, x86::r8, 0, STATE_OFFS(memBase)));
 	c.mov(x86::byte_ptr(x86::r8, 0), x86::al);
 	c.shr(x86::eax, 8); // Move back reminder
 	c.mov(x86::dl, 10);
@@ -1010,8 +1011,8 @@ void asm_insts::STR(X86Assembler& c)
 	c.mov(x86::r8, state); // Save state
 	c.mov(x86::ecx, opcode.r32());
 	c.mov(x86::edi, x86::dword_ptr(x86::r8, STATE_OFFS(index)));
-	c.lea(x86::rdi, x86::ptr(x86::r8, x86::rdi, 0, STATE_OFFS(memBase)));
-	c.lea(x86::rsi, x86::ptr(x86::r8, STATE_OFFS(gpr)));
+	c.lea(x86::rdi, lea_ptr(x86::r8, x86::rdi, 0, STATE_OFFS(memBase)));
+	c.lea(x86::rsi, lea_ptr(x86::r8, STATE_OFFS(gpr)));
 	c.rep().movsb();
 	c.mov(state, x86::r8);
 	if (g_state.is_super)
@@ -1026,8 +1027,8 @@ void asm_insts::LDR(X86Assembler& c)
 	c.mov(x86::r8, state);
 	c.mov(x86::ecx, opcode.r32());
 	c.mov(x86::esi, x86::dword_ptr(x86::r8, STATE_OFFS(index)));
-	c.lea(x86::rsi, x86::ptr(x86::r8, x86::rsi, 0, STATE_OFFS(memBase)));
-	c.lea(x86::rdi, x86::ptr(x86::r8, STATE_OFFS(gpr)));
+	c.lea(x86::rsi, lea_ptr(x86::r8, x86::rsi, 0, STATE_OFFS(memBase)));
+	c.lea(x86::rdi, lea_ptr(x86::r8, STATE_OFFS(gpr)));
 	c.rep().movsb();
 	c.mov(state, x86::r8);
 	if (g_state.is_super)
