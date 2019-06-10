@@ -166,7 +166,8 @@ static void fallback(X86Assembler& c)
 // If that happens use dec ecx + jne instead
 static void try_loop(X86Assembler& c, Label& label)
 {
-	if (c.loop(label) != ErrorCode::kErrorOk)
+	if (c.getLastError() == ErrorCode::kErrorOk
+		&& c.loop(label) != ErrorCode::kErrorOk)
 	{
 		c.resetLastError(); // Must reset
 		c.dec(x86::ecx);
@@ -223,6 +224,9 @@ static asm_insts::func_t build_instruction(const F& func, const bool jump)
 		{
 			builder(std::ref(c));
 		}
+
+		// Verify success
+		assert(c.getLastError() == ErrorCode::kErrorOk);
 	});
 }
 
@@ -238,10 +242,10 @@ void asm_insts::build_all(std::uintptr_t* table)
 		const u32 opcode = u32(entry.opcode);
 
 		// Scalers for each field
-		static const auto m3 = [](const u32&& val) -> u32 { return val * 0x1000; };
-		static const auto m2 = [](const u32&& val) -> u32 { return val * 0x100; };
-		static const auto m1 = [](const u32&& val) -> u32 { return val * 0x10; };
-		static const auto m0 = [](const u32&& val) -> u32 { return val * 0x1; };
+		static const auto m3 = [](const u32& val) -> u32 { return val * 0x1000; };
+		static const auto m2 = [](const u32& val) -> u32 { return val * 0x100; };
+		static const auto m1 = [](const u32& val) -> u32 { return val * 0x10; };
+		static const auto m0 = [](const u32& val) -> u32 { return val * 0x1; };
 
 		// Go through all possible opcodes which this instruction may fit in
 		for (u32 op = (opcode & imask); op < UINT16_MAX + 1;)
@@ -676,7 +680,7 @@ void asm_insts::SetIndex(X86Assembler& c)
 
 void asm_insts::JPr(X86Assembler& c)
 {
-	c.movzx(opcode.r32(), opcode.r16());
+	c.and_(opcode.r32(), 0xFFF);
 	c.movzx(x86::r8d, x86::byte_ptr(state, STATE_OFFS(gpr) + 0));
 	c.lea(pc.r32(), lea_ptr(opcode, x86::r8d));
 }
@@ -1055,6 +1059,7 @@ void asm_insts::guard(X86Assembler& c)
 
 DECLARE(asm_insts::entry);
 
+#undef lea_ptr
 #undef DECLARE
 #undef STATE_OFFS
 #undef DEBUG_INSTS
