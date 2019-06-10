@@ -60,8 +60,8 @@ void emu_state::load_exec()
 
 	for (const auto& str : files)
 	{
-		size_t index = str.find_last_of('/');
-		names.emplace_back(str.c_str() + index + 1);
+		size_t start = str.find_last_of('/');
+		names.emplace_back(str.c_str() + start + 1);
 	}
 
 	for (u32 j = 0; j < 32; j++)
@@ -144,18 +144,18 @@ void emu_state::load_exec()
 	}
 
 	file.seekg(0, file.end);
-	int length = file.tellg();
+	std::streamoff length = file.tellg();
 	file.seekg(0, file.beg);
 
 	// Sanity checks for file size
-	if (!length || length > 4096 - 512)
+	if (!length || length > (4096 - 512))
 	{
 		file.close();
 		return failure();
 	}
 
 	// Executable load start address is 0x200
-	file.read(g_state.ptr<u8>(0x200), length);
+	file.read(g_state.ptr<u8>(0x200), zext<std::streamsize>(length));
 }
 
 int main()

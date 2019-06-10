@@ -143,9 +143,9 @@ static void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcod
 static void fallback(X86Assembler& c)
 {
 	// Wrapper to member function
-	static const auto call_interpreter = [](emu_state* state)
+	static const auto call_interpreter = [](emu_state* _state)
 	{
-		state->OpcodeFallback();
+		_state->OpcodeFallback();
 	};
 
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
@@ -239,7 +239,7 @@ void asm_insts::build_all(std::uintptr_t* table)
 
 		// Get instruction pattern mask and pattern opcode 
 		const u32 imask = u32(entry.mask);
-		const u32 opcode = u32(entry.opcode);
+		const u32 icode = u32(entry.opcode);
 
 		// Scalers for each field
 		static const auto m3 = [](const u32& val) -> u32 { return val * 0x1000; };
@@ -248,29 +248,29 @@ void asm_insts::build_all(std::uintptr_t* table)
 		static const auto m0 = [](const u32& val) -> u32 { return val * 0x1; };
 
 		// Go through all possible opcodes which this instruction may fit in
-		for (u32 op = (opcode & imask); op < UINT16_MAX + 1;)
+		for (u32 op = (icode & imask); op < UINT16_MAX + 1;)
 		{
 			// Test if opocde is within specified bounds for each field
-			if ((imask & m3(0xF)) && ((opcode ^ op) & m3(0xF)) != 0)
+			if ((imask & m3(0xF)) && ((icode ^ op) & m3(0xF)) != 0)
 			{
 				// Fast skip until we get to the field we want
 				op += m3(0x1);
 				continue;
 			}
 
-			if ((imask & m2(0xF)) && ((opcode ^ op) & m2(0xF)) != 0)
+			if ((imask & m2(0xF)) && ((icode ^ op) & m2(0xF)) != 0)
 			{
 				op += m2(0x1);
 				continue;
 			}
 
-			if ((imask & m1(0xF)) && ((opcode ^ op) & m1(0xF)) != 0)
+			if ((imask & m1(0xF)) && ((icode ^ op) & m1(0xF)) != 0)
 			{
 				op += m1(0x1);
 				continue;
 			}
 
-			if ((imask & m0(0xF)) && ((opcode ^ op) & m0(0xF)) != 0)
+			if ((imask & m0(0xF)) && ((icode ^ op) & m0(0xF)) != 0)
 			{
 				op += m0(0x1);
 				continue;
@@ -311,7 +311,7 @@ void asm_insts::CLS(X86Assembler& c)
 	Label extended_mode = c.newLabel();
 	Label end = c.newLabel();
 
-	if (::has_avx)
+	if (::has_avx())
 	{
 		// Try to use AVX if possible
 		c.vxorps(x86::ymm0, x86::ymm0, x86::ymm0);
@@ -340,7 +340,7 @@ void asm_insts::CLS(X86Assembler& c)
 		c.bind(loop_);
 
 		// Use out-of-order execution by using more than one register
-		for (u32 i = 0; i < (!extended ? 4 : 2); i++)
+		for (u32 i = 0; i < u32(!extended ? 4 : 2); i++)
 		{
 			if (::has_avx())
 			{

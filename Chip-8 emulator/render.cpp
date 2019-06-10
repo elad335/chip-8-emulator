@@ -49,10 +49,10 @@ void InitWindow()
 	}
 
 	// Set callback on closing window
-	glfwSetWindowCloseCallback(window, [](GLFWwindow* window)
+	glfwSetWindowCloseCallback(window, [](GLFWwindow* wnd)
 	{
 		glfwMakeContextCurrent(NULL); // Unuse currect context
-		glfwDestroyWindow(window); // Free context
+		glfwDestroyWindow(wnd); // Free context
 		glfwTerminate(); // GLFW cleanup
 		g_state.terminate = true; // Signal timers thread
 		g_state.hwtimers->join(); // join
@@ -207,7 +207,7 @@ GLuint LoadShadersFromFiles(const wchar_t* vertex_file_path, const wchar_t* frag
 	else
 	{
 		ShowWindow(GetConsoleWindow(), SW_SHOW);
-		printf("Failed to read vertex shader: %s\n", vertex_file_path);
+		wprintf(L"Failed to read vertex shader: %s\n", vertex_file_path);
 		hwBpx();
 		return 0;
 	}
@@ -225,7 +225,7 @@ GLuint LoadShadersFromFiles(const wchar_t* vertex_file_path, const wchar_t* frag
 	else
 	{
 		ShowWindow(GetConsoleWindow(), SW_SHOW);
-		printf("Failed to read fragement shader: %s.\n", fragment_file_path);
+		wprintf(L"Failed to read fragement shader: %s.\n", fragment_file_path);
 		hwBpx();
 		return 0;
 	}

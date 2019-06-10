@@ -52,7 +52,7 @@ namespace
 		if (!value)
 		{
 			// Segfault
-			std::launder(static_cast<volatile std::atomic<u32>*>(nullptr))->load();
+			static_cast<volatile std::atomic<u32>*>(nullptr)->load();
 		}
 
 		return value;
@@ -65,7 +65,7 @@ namespace
 		if (!std::invoke(std::forward<F>(func), value))
 		{
 			// Segfault
-			std::launder(static_cast<volatile std::atomic<u32>*>(nullptr))->load();
+			static_cast<volatile std::atomic<u32>*>(nullptr)->load();
 		}
 
 		return value;
@@ -139,18 +139,9 @@ inline u64 get_xgetbv(u32 xcr)
 }
 
 // Check if CPU has AVX support (taken from https://github.com/RPCS3/rpcs3/blob/master/Utilities/sysinfo.cpp#L29)
-static bool has_avx()
-{
-	static const bool g_value = get_cpuid(0, 0)[0] >= 0x1 && get_cpuid(1, 0)[2] & 0x10000000 && (get_cpuid(1, 0)[2] & 0x0C000000) == 0x0C000000 && (get_xgetbv(0) & 0x6) == 0x6;
-	return g_value;
-}
-
+bool has_avx();
 // Check if CPU has MOVBE instruction support
-static bool has_movbe()
-{
-	static const bool g_value = (get_cpuid(1, 0)[2] & 0x400000) != 0;
-	return g_value;
-}
+bool has_movbe();
 
 // Bit scanning utils
 static inline u32 cntlz32(u32 arg, bool nonzero = false)

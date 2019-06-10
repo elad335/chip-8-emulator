@@ -2,7 +2,7 @@
 #include "asmutils.h"
 #include "../utils.h"
 
-#include <vector>
+#include <initializer_list>
 
 struct asm_insts
 {
@@ -24,7 +24,7 @@ public:
 		std::add_pointer_t<build_t> builder;
 	};
 
-	static const std::vector<inst_entry> all_ops;
+	static const std::initializer_list<inst_entry> all_ops;
 
 	static void build_all(std::uintptr_t* table);
 

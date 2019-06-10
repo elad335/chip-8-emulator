@@ -16,11 +16,11 @@ namespace input
 		// May need perf tuning (use an OS's blocking method)
 		while (true)
 		{
-			for (u32 i = 0; i < std::size(keyIDs); i++)
+			for (size_t i = 0; i < std::size(keyIDs); i++)
 			{
 				if (TestKeyState(i))
 				{
-					return i;
+					return zext<u8>(i);
 				}
 			}
 
