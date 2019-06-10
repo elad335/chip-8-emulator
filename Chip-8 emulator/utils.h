@@ -41,82 +41,8 @@ typedef std::int64_t s64;
 typedef std::intptr_t sptr;
 typedef std::intmax_t smax_t;
 
-typedef long double f80;
 typedef double f64;
 typedef float f32;
-
-namespace atomic
-{
-	// Atomic operation
-	template <typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
-	force_inline RT op(std::atomic<T>& var, F&& func)
-	{
-		T old = var.load(std::memory_order_acquire), state;
-
-		while (true)
-		{
-			state = old;
-
-			if constexpr (std::is_void_v<RT>)
-			{
-				std::invoke(std::forward<F>(func), state);
-
-				if (var.compare_exchange_strong(old, state))
-				{
-					return;
-				}
-			}
-			else
-			{
-				RT result = std::invoke(std::forward<F>(func), state);
-
-				if (var.compare_exchange_strong(old, state))
-				{
-					return result;
-				}
-			}
-		}
-	}
-
-	// Atomic operation (returns previous value)
-	template <typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
-	force_inline T fetch_op(std::atomic<T>& var, F&& func)
-	{
-		static_assert(std::is_void_v<RT>, "Unsupported function return type passed to fetch_op");
-
-		T old = var.load(std::memory_order_acquire), state;
-
-		while (true)
-		{
-			std::invoke(std::forward<F>(func), (state = old));
-
-			if (var.compare_exchange_strong(old, state))
-			{
-				return old;
-			}
-		}
-	}
-
-	// Atomic operation (cancelable, returns false if cancelled)
-	template<typename T, typename F, typename RT = std::invoke_result_t<F, T&>>
-	force_inline bool cond_op(std::atomic<T>& var, F&& func)
-	{
-		// TODO: detect bool conversation existence
-		static_assert(std::is_same_v<RT, void> == false, "Unsupported function return type passed to cond_op");
-
-		T old = var.load(std::memory_order_acquire), state;
-
-		while (true)
-		{
-			const RT ret = std::invoke(std::forward<F>(func), (state = old));
-
-			if (!ret || var.compare_exchange_strong(old, state))
-			{
-				return ret;
-			}
-		}
-	}
-};
 
 namespace
 {

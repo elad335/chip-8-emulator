@@ -38,7 +38,7 @@ void emu_state::reset()
 	sp = 0;
 	pc = 0x200;
 	index = 0;
-	timers.store({});
+	timers.data = {};
 	asm_insts::build_all(ops);
 	hwtimers = new std::thread(timerJob);
 
@@ -482,7 +482,7 @@ void emu_state::OpcodeFallback()
 		{
 			// Get delay timer
 			const u8 reg = getField<2>(opcode);
-			gpr[reg] = timers.load().delay;
+			gpr[reg] = timers.delay;
 			return Procceed();
 		}
 		case 0x0A:
@@ -498,11 +498,7 @@ void emu_state::OpcodeFallback()
 		{
 			// Set dealy timer
 			const u8 value = gpr[getField<2>(opcode)];
-
-			atomic::op(timers, [&value](time_control_t& state)
-			{
-				state.delay = value;
-			});
+			timers.delay = value;
 
 			return Procceed();
 		}
@@ -510,11 +506,7 @@ void emu_state::OpcodeFallback()
 		{
 			// Set sound timer
 			const u8 value = gpr[getField<2>(opcode)];
-
-			atomic::op(timers, [&value](time_control_t& state)
-			{
-				state.sound = value;
-			});
+			timers.sound = value;
 
 			return Procceed();
 		}

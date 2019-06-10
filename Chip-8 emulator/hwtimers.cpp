@@ -1,5 +1,6 @@
 #include "emucore.h"
 #include "hwtimers.h"
+#include <atomic>
 
 void timerJob()
 {
@@ -10,34 +11,46 @@ void timerJob()
 		bool result = false;
 
 		// Decrement sound and delay timers if necessary
-		atomic::cond_op(g_state.timers, [&result](time_control_t& state)
+		for (u16 old = (u16)g_state.timers.data, state = (std::atomic_thread_fence(std::memory_order_acquire), old);;)
 		{
-			if (state.delay)
-			{
-				--state.delay;
+			// Multipliers for delay, sound fields
+			static const auto m_delay = [](const u16 val) -> u16 { return val * 0x100; };
+			static const auto m_sound = [](const u16 val) -> u16 { return val * 0x1; };
 
-				if (state.sound && state.sound-- != 0)
+			if (state & m_delay(0xFF))
+			{
+				state -= m_delay(1);
+
+				if (state & m_sound(0xFF) && 
+					((state -= m_sound(1)) & m_sound(0xFF)) == m_sound(1))
 				{
 					result = true;
 				}
-
-				return true;
 			}
-			
-			if (state.sound)
+			else if (state & m_sound(0xFF))
 			{
-				if (state.sound-- != 0)
+				if (((state -= m_sound(1)) & m_sound(0xFF)) == m_sound(1))
 				{
 					result = true;
 				}
-
-				return true;
+			}
+			else
+			{
+				// Nothing to do
+				break;
 			}
 
-			// Cancel operation, no changes were done
-			return false;
+			const u16 new_data = (u16)_InterlockedCompareExchange16(&g_state.timers.data, (short)state, (short)old);
 
-		});
+			if (new_data == old)
+			{
+				// Storing success 
+				break;
+			}
+
+			// Refrash data
+			old = state = new_data;
+		}
 
 		if (result)
 		{

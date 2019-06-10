@@ -937,7 +937,7 @@ void asm_insts::SKNP(X86Assembler& c)
 
 void asm_insts::GetD(X86Assembler& c)
 {
-	c.mov(x86::r8b, x86::byte_ptr(state, STATE_OFFS(timers) + ::offset32(&time_control_t::delay)));
+	c.mov(x86::r8b, x86::byte_ptr(state, STATE_OFFS(timers) + ::offset32(&decltype(emu_state::timers)::delay)));
 	getField<2>(c, opcode);
 	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
 }
@@ -957,14 +957,14 @@ void asm_insts::SetD(X86Assembler& c)
 {
 	getField<2>(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
-	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset32(&time_control_t::delay)), x86::r8b);
+	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset32(&decltype(emu_state::timers)::delay)), x86::r8b);
 }
 
 void asm_insts::SetS(X86Assembler& c)
 {
 	getField<2>(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
-	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset32(&time_control_t::sound)), x86::r8b);
+	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset32(&decltype(emu_state::timers)::sound)), x86::r8b);
 }
 
 void asm_insts::AddIndex(X86Assembler& c)

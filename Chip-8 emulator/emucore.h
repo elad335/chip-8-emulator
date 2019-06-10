@@ -2,12 +2,6 @@
 
 #include "utils.h"
 
-struct alignas(2) time_control_t
-{
-	u8 sound;
-	u8 delay;
-};
-
 struct emu_state
 {
 	// The RAM (4k + instruction flow guard)
@@ -23,7 +17,7 @@ struct emu_state
 	// Memory pointer
 	u32 index;
 	// Container for delay timer and sound timer
-	std::atomic<time_control_t> timers;
+	union { volatile short data; struct { volatile u8 sound, delay; }; } timers;
 	// Set when it's time to close the emulator
 	volatile bool terminate = false;
 	// Timers thread's thread handle
@@ -111,6 +105,3 @@ static inline u8 getField(u16 opcode)
 
 	return (opcode >> (index * 4)) & 0xF;
 }
-
-// Logic relies on this
-static_assert(sizeof(std::atomic<time_control_t>) == sizeof(time_control_t) && std::atomic<time_control_t>::is_always_lock_free);
