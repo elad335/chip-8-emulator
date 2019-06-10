@@ -82,7 +82,7 @@ void emu_state::OpcodeFallback()
 	};
 
 	// Big Endian architecture, swap bytes
-	const u16 opcode = this->read<be_t<u16>>(pc);
+	const u16 opcode = get_be_data<u16>(this->read<u16>(pc));
 
 	switch (getField<3>(opcode))
 	{

@@ -146,81 +146,34 @@ namespace
 	}
 }
 
-// Current implementation only allows usage of unsigned types
+// Get integral data as BE endian data (assume host LE architecture)
 template <typename T>
-struct be_t
+static inline T get_be_data(const T& data)
 {
-	be_t()
-	{
-		static_assert(false, "Type does not meet the requirements of BE storage");
-	}
-};
+	constexpr size_t N = sizeof(T);
 
-// Specailization
-template<>
-struct be_t<u8>
-{
-	u16 m_data;
-
-	constexpr be_t(const u8 value)
-		: m_data(value)
+	if constexpr (N == 1)
 	{
+		return data;
 	}
 
-	// A single byte doesnt need byteswapping
-	operator u8()
+	if constexpr (N == 2)
 	{
-		return m_data;
-	}
-};
-
-template<>
-struct be_t<u16>
-{
-	u16 m_data;
-
-	constexpr be_t(const u16 value)
-		: m_data(value)
-	{
+		return static_cast<u16>(_byteswap_ushort(static_cast<u16>(data)));
 	}
 
-	operator u16()
+	if constexpr (N == 4)
 	{
-		return _byteswap_ushort(m_data);
-	}
-};
-
-template<>
-struct be_t<u32>
-{
-	u32 m_data;
-
-	constexpr be_t(const u32 value)
-		: m_data(value)
-	{
+		return static_cast<u32>(_byteswap_ulong(static_cast<u32>(data)));
 	}
 
-	operator u32()
+	if constexpr (N == 8)
 	{
-		return _byteswap_ulong(m_data);
-	}
-};
-
-template<>
-struct be_t<u64>
-{
-	u64 m_data;
-
-	constexpr be_t(const u64 value)
-		: m_data(value)
-	{
+		return static_cast<u64>(_byteswap_ushort(static_cast<u64>(data)));
 	}
 
-	operator u64()
-	{
-		return _byteswap_uint64(m_data);
-	}
-};
+	assert(false);
+}
 
 // This returns relative offset of member class from 'this'
 template <typename T, typename T2>
