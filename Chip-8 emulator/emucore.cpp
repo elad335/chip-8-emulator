@@ -42,26 +42,20 @@ void emu_state::reset()
 	asm_insts::build_all(ops);
 	hwtimers = new std::thread(timerJob);
 
-	// Compilation time decoding of all possible pixel values for DRW
-	// Note: this assumes little endian
+	// Generate a lookup table for all possible pixels values for DRW 
 	for (u32 i = 0; i < UINT8_MAX + 1; i++)
 	{
-		// Raw bytes view
-		union
-		{
-			u64 l;
-			u8 b[sizeof(l)];
-		} view = {};
+		u64 to_write = {};
 
 		for (u32 bit = 0; bit < 8; bit++)
 		{
 			if (i & (1u << bit))
 			{
-				view.b[7 - bit] = 0xFF;
+				to_write |= UINT64_C(0xFF) << ((7 - bit) * 8);
 			}
 		}
 
-		DRWtable[i] = view.l;
+		DRWtable[i] = to_write;
 	}
 }
 
