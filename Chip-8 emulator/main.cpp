@@ -158,6 +158,13 @@ void emu_state::load_exec()
 	file.read(g_state.ptr<u8>(0x200), zext<std::streamsize>(length));
 }
 
+void handle_all_errors()
+{
+	ShowWindow(GetConsoleWindow(), SW_SHOW);
+	printf("%s (last opcode = 0x%04x at 0x%04x)", g_state.last_error, get_be_data<u16>(g_state.read<u16>(g_state.pc)), g_state.pc);
+	std::this_thread::sleep_for(std::chrono::seconds(10));
+}
+
 int main()
 {
 	// Load rom, reset state and compile the instruction table
@@ -169,5 +176,7 @@ int main()
 	// Asm code now takes over
 	asm_insts::entry();
 
+	// Print last error if there is one
+	handle_all_errors();
 	return 0;
 }

@@ -153,14 +153,6 @@ static void fallback(X86Assembler& c)
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 }
 
-/*static never_inline void exec_no_return(char* message, u64 opcode)
-{
-	ShowWindow(GetConsoleWindow(), SW_SHOW);;
-	printf("%s (%llx)\n", message, opcode);
-	Sleep(5000);
-	std::exit(-1);
-}*/
-
 // Try to emit a loop instruction
 // loop instruction uses Imm8 for relative so it may fail if distance is too long
 // If that happens use dec ecx + jne instead
@@ -289,6 +281,12 @@ decltype(asm_insts::entry) asm_insts::build_entry()
 {
 	return build_function_asm<decltype(asm_insts::entry)>([](X86Assembler& c)
 	{
+		Label is_exit = c.newLabel();
+		c.mov(args[0], imm_ptr(&g_state));
+		c.cmp(x86::byte_ptr(args[0], STATE_OFFS(emu_started)), (u8)true);
+		c.je(is_exit);
+
+		c.mov(x86::byte_ptr(args[0], STATE_OFFS(emu_started)), (u8)true);
 		c.mov(x86::qword_ptr(x86::rsp, 0x8), pc); // Save non-volatile register on home-space
 		c.mov(x86::qword_ptr(x86::rsp, 0x10), x86::r12);
 		c.mov(x86::qword_ptr(x86::rsp, 0x18), x86::r13);
@@ -303,6 +301,19 @@ decltype(asm_insts::entry) asm_insts::build_entry()
 		c.movzx(args[1].r32(), x86::word_ptr(state, pc, 0, STATE_OFFS(memBase)));
 		c.xchg(x86::dl, x86::dh); // Byteswap
 		c.jmp(x86::qword_ptr(state, args[1], ARR_SUBSCRIPT(ops)));
+
+		c.bind(is_exit);
+		c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
+		c.add(x86::rsp, STACK_RESERVE);
+		c.pop(x86::rbx);
+		c.pop(x86::rdi);
+		c.pop(x86::rsi);
+		c.pop(x86::r15);
+		c.mov(pc, x86::qword_ptr(x86::rsp, 0x8));
+		c.mov(x86::r12, x86::qword_ptr(x86::rsp, 0x10));
+		c.mov(x86::r13, x86::qword_ptr(x86::rsp, 0x18));
+		c.mov(x86::r14, x86::qword_ptr(x86::rsp, 0x20));
+		c.ret();
 	});
 }
 
@@ -397,18 +408,15 @@ void asm_insts::RET(X86Assembler& c)
 	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(sp)));
 	c.sub(x86::r8d, 1);
 
-#ifdef  DEBUG_INSTS
+	// Check stack underflow
 	Label ok = c.newLabel();
 	c.jns(ok);
-	c.ud2();
-	c.db('U');
-	c.db('N');
-	c.db('D');
-	c.db('E');
-	c.db('R');
-	c.int3();
+	c.mov(x86::r8, imm_ptr("RET stack underflow"));
+	c.mov(x86::qword_ptr(state, STATE_OFFS(last_error)), x86::r8);
+	c.mov(x86::r8, imm_ptr(&asm_insts::entry));
+	c.mov(x86::r8, x86::qword_ptr(x86::r8));
+	c.jmp(x86::r8);;
 	c.bind(ok);
-#endif
 
 	c.mov(x86::dword_ptr(state, STATE_OFFS(sp)), x86::r8d);
 	c.mov(pc.r32(), x86::dword_ptr(state, x86::r8, ARR_SUBSCRIPT(stack)));
@@ -520,22 +528,20 @@ void asm_insts::JP(X86Assembler& c)
 void asm_insts::CALL(X86Assembler& c)
 {
 	c.and_(opcode.r32(), 0xFFF); // Extract addr
-	c.add(pc.r32(), 2);
 	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(sp)));
 
-#ifdef  DEBUG_INSTS
+	// Check stack overflow
 	Label ok = c.newLabel();
 	c.cmp(x86::r8d, 16);
 	c.jne(ok);
-	c.ud2();
-	c.db('O');
-	c.db('V');
-	c.db('E');
-	c.db('R');
-	c.int3();
+	c.mov(x86::r8, imm_ptr("CALL stack overflow"));
+	c.mov(x86::qword_ptr(state, STATE_OFFS(last_error)), x86::r8);
+	c.mov(x86::r8, imm_ptr(&asm_insts::entry));
+	c.mov(x86::r8, x86::qword_ptr(x86::r8));
+	c.jmp(x86::r8);
 	c.bind(ok);
-#endif
 
+	c.add(pc.r32(), 2);
 	c.mov(x86::dword_ptr(state, x86::r8, ARR_SUBSCRIPT(stack)), pc.r32());
 	c.inc(x86::r8d);
 	c.mov(x86::dword_ptr(state, STATE_OFFS(sp)), x86::r8d);
@@ -854,7 +860,7 @@ static void form_DRW(X86Assembler& c)
 
 				if (is_super)
 				{
-					if (g_state.DRW_wrap)
+					if (g_state.DRW_wrapping)
 					{
 						c.and_(x86::r12d, x86::r15d);
 					}
@@ -867,7 +873,7 @@ static void form_DRW(X86Assembler& c)
 				}
 				else
 				{
-					if (g_state.DRW_wrap)
+					if (g_state.DRW_wrapping)
 					{
 						c.and_(x86::r12d, emu_state::xy_mask);
 					}
@@ -1042,14 +1048,11 @@ void asm_insts::LDR(X86Assembler& c)
 
 void asm_insts::UNK(X86Assembler& c)
 {
-	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
-	c.mov(opcode, opcode);
-
-	c.ud2();
-	c.db('U');
-	c.db('N');
-	c.db('K');
-	c.int3();
+	c.mov(x86::r8, imm_ptr("Unknown instruction"));
+	c.mov(x86::qword_ptr(state, STATE_OFFS(last_error)), x86::r8);
+	c.mov(x86::r8, imm_ptr(&asm_insts::entry));
+	c.mov(x86::r8, x86::qword_ptr(x86::r8));
+	c.jmp(x86::r8);
 }
 
 void asm_insts::guard(X86Assembler& c)

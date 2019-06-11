@@ -569,5 +569,6 @@ void emu_state::OpcodeFallback()
 		//return;
 	}
 
+	last_error = "Unknown Instruction:";
 	hwBpx();
 }

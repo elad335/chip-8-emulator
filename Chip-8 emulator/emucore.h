@@ -34,8 +34,12 @@ struct emu_state
 	u64 sleep_period = 16;
 	// Is schip 8 boolean
 	bool is_super = false;
-	// DRW wrapping
-	bool DRW_wrap = true;
+	// DRW wrapping override
+	bool DRW_wrapping = true;
+	// Debug data: last error string
+	const char* last_error = "";
+	// is in emulation?
+	bool emu_started = false;
 	// Opcodes simple fallbacks
 	void OpcodeFallback();
 	// Reset registers
