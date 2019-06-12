@@ -94,7 +94,7 @@ static const X86Gp& retn = x86::rax;
 // Optional code emitting after the end of the current instruction
 static std::function<void(X86Assembler&)> from_end{};
 
-#define STATE_OFFS(member) ::offset32(&emu_state::member)
+#define STATE_OFFS(member) ::offset_of(&emu_state::member)
 #define STACK_RESERVE (0x28)
 
 // Addressing helpers:
@@ -384,7 +384,7 @@ void asm_insts::CLS(X86Assembler& c)
 		c.add(x86::r9, 256); // Fill 256 bytes each loop
 		try_loop(c, loop_);
 
-		c.mov(args[0], (std::uintptr_t)&g_state + (u64)STATE_OFFS(gfxMemory)); // Set gfxMemory* as argument
+		c.mov(args[0], bitcast<u64>(&g_state) + zext<u64>(STATE_OFFS(gfxMemory))); // Set gfxMemory* as argument
 		c.call(imm_ptr(std::addressof(extended ? ::KickSChip8Framebuffer : ::KickChip8Framebuffer)));
 
 		if (extended != 0 || !g_state.is_super)
@@ -466,7 +466,7 @@ static void form_SCRL(X86Assembler& c)
 		c.dec(x86::r8d);
 		c.jne(loop_);
 
-		c.mov(args[0], (std::uintptr_t)&g_state + (u64)STATE_OFFS(gfxMemory)); // Set gfxMemory* as argument
+		c.mov(args[0], bitcast<u64>(&g_state) + zext<u64>(STATE_OFFS(gfxMemory))); // Set gfxMemory* as argument
 		c.call(imm_ptr(std::addressof(extended ? ::KickSChip8Framebuffer : ::KickChip8Framebuffer)));
 
 		if (extended != 0)
@@ -947,7 +947,7 @@ void asm_insts::SKNP(X86Assembler& c)
 
 void asm_insts::GetD(X86Assembler& c)
 {
-	c.mov(x86::r8b, x86::byte_ptr(state, STATE_OFFS(timers) + ::offset32(&decltype(emu_state::timers)::delay)));
+	c.mov(x86::r8b, x86::byte_ptr(state, STATE_OFFS(timers) + ::offset_of(&decltype(emu_state::timers)::delay)));
 	getField<2>(c, opcode);
 	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
 }
@@ -967,14 +967,14 @@ void asm_insts::SetD(X86Assembler& c)
 {
 	getField<2>(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
-	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset32(&decltype(emu_state::timers)::delay)), x86::r8b);
+	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset_of(&decltype(emu_state::timers)::delay)), x86::r8b);
 }
 
 void asm_insts::SetS(X86Assembler& c)
 {
 	getField<2>(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
-	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset32(&decltype(emu_state::timers)::sound)), x86::r8b);
+	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset_of(&decltype(emu_state::timers)::sound)), x86::r8b);
 }
 
 void asm_insts::AddIndex(X86Assembler& c)

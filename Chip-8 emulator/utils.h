@@ -72,7 +72,33 @@ namespace
 	}
 }
 
-// Get integral data as BE endian data (assume host LE architecture)
+// Guarenteed zero extension regardless of the sign of the source and destination types
+// Note: can also be used for truncuation 
+template<typename To, typename From>
+static inline constexpr To zext(const From& from)
+{
+	return static_cast<To>(static_cast<std::make_unsigned_t<To>>(static_cast<std::make_unsigned_t<From>>(from)));
+}
+
+// Guarenteed sign extension regardless of the sign of the source and destination types
+template<typename To, typename From>
+static inline constexpr To sext(const From& from)
+{
+	return static_cast<To>(static_cast<std::make_signed_t<To>>(static_cast<std::make_signed_t<From>>(from)));
+}
+
+// A partial equivalent to c++20's std::bit_cast (not constexpr)
+template <class To, class From, typename = std::enable_if_t<sizeof(To) == sizeof(From)>>
+inline To bitcast(const From& from) noexcept
+{
+	static_assert(sizeof(To) == sizeof(From), "bitcast: incompatible type size");
+
+	To result;
+	std::memcpy(&result, &from, sizeof(From));
+	return result;
+}
+
+// Get integral/floats data as BE endian data (assume host LE architecture)
 template <typename T>
 static inline T get_be_data(const T& data)
 {
@@ -85,57 +111,34 @@ static inline T get_be_data(const T& data)
 
 	if constexpr (N == 2)
 	{
-		return static_cast<u16>(_byteswap_ushort(static_cast<u16>(data)));
+		return bitcast<u16>(_byteswap_ushort(bitcast<u16>(data)));
 	}
 
 	if constexpr (N == 4)
 	{
-		return static_cast<u32>(_byteswap_ulong(static_cast<u32>(data)));
+		return bitcast<u32>(_byteswap_ulong(bitcast<u32>(data)));
 	}
 
 	if constexpr (N == 8)
 	{
-		return static_cast<u64>(_byteswap_ushort(static_cast<u64>(data)));
+		return bitcast<u64>(_byteswap_ushort(bitcast<u64>(data)));
 	}
 
 	assert(false);
 }
 
-// This returns relative offset of member class from 'this'
+// This returns relative offset of member class from 'this' (enhanced version of offsetof macro)
 template <typename T, typename T2>
-static inline u32 offset32(T T2::*const mptr)
+static inline u32 offset_of(T T2::*const mptr)
 {
-#ifdef _MSC_VER
-	static_assert(sizeof(mptr) == sizeof(u32), "Invalid pointer-to-member size");
-	return reinterpret_cast<const u32&>(mptr);
-#elif __GNUG__
-	static_assert(sizeof(mptr) == sizeof(std::size_t), "Invalid pointer-to-member size");
-	return static_cast<u32>(reinterpret_cast<const std::size_t&>(mptr));
-#else
-	static_assert(sizeof(mptr) == 0, "Invalid pointer-to-member size");
-#endif
+	return ::bitcast<u32>(mptr);
 }
 
 inline std::array<u32, 4> get_cpuid(u32 func, u32 subfunc)
 {
-	int regs[4];
-#ifdef _MSC_VER
+	int regs[4]{};
 	__cpuidex(regs, func, subfunc);
-#else
-	__asm__ volatile("cpuid" : "=a" (regs[0]), "=b" (regs[1]), "=c" (regs[2]), "=d" (regs[3]) : "a" (func), "c" (subfunc));
-#endif
 	return { 0u + regs[0], 0u + regs[1], 0u + regs[2], 0u + regs[3] };
-}
-
-inline u64 get_xgetbv(u32 xcr)
-{
-#ifdef _MSC_VER
-	return _xgetbv(xcr);
-#else
-	u32 eax, edx;
-	__asm__ volatile("xgetbv" : "=a"(eax), "=d"(edx) : "c"(xcr));
-	return eax | (u64(edx) << 32);
-#endif
 }
 
 // Check if CPU has AVX support (taken from https://github.com/RPCS3/rpcs3/blob/master/Utilities/sysinfo.cpp#L29)
@@ -177,21 +180,6 @@ static inline u32 flog2(u32 value) // Floor log2
 static inline u32 clog2(u32 value) // Ceil log2
 {
 	return value <= 1 ? 0 : ::cntlz32((value - 1) << 1, true) ^ 31;
-}
-
-// Guarenteed zero extension regardless of the sign of the source and destination types
-// Note: can also be used for truncuation 
-template<typename To, typename From>
-static inline constexpr To zext(const From& from)
-{
-	return static_cast<To>(static_cast<std::make_unsigned_t<To>>(static_cast<std::make_unsigned_t<From>>(from)));
-}
-
-// Guarenteed sign extension regardless of the sign of the source and destination types
-template<typename To, typename From>
-static inline constexpr To sext(const From& from)
-{
-	return static_cast<To>(static_cast<std::make_signed_t<To>>(static_cast<std::make_signed_t<From>>(from)));
 }
 
 // Constexpr log2 varients (<3)
