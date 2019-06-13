@@ -13,21 +13,23 @@ struct emu_state
 	// Stack pointer
 	u32 sp;
 	// Current instruction address
-	u32 pc;
+	volatile u32 pc;
 	// Memory pointer
 	u32 index;
 	// Container for delay timer and sound timer
-	union { volatile short data; struct { volatile u8 sound, delay; }; } timers;
+	union { volatile u16 data; struct { volatile u8 sound, delay; }; } timers;
 	// Set when it's time to close the emulator
 	volatile bool terminate = false;
 	// Timers thread's thread handle
-	std::thread* volatile hwtimers;
+	std::thread* hwtimers;
 	// DRW pixel decoding lookup table
 	u64 DRWtable[UINT8_MAX + 1]; 
 	// compatibilty flag (mask) for schip 8 (don't confuse with is_super)
 	u32 compatibilty = 0;
+	// Place to save and restore registers in 'flags'
+	u8 reg_save[16];
 	// Video mode
-	bool extended = false;
+	volatile bool extended = false;
 	// Asmjit/Interpreter: function table
 	std::uintptr_t ops[UINT16_MAX + 1];
 	// Settings section: sleep between instructions in ms
@@ -37,7 +39,7 @@ struct emu_state
 	// DRW wrapping override
 	bool DRW_wrapping = true;
 	// Debug data: last error string
-	const char* last_error = "";
+	const char* volatile last_error = "";
 	// is in emulation?
 	bool emu_started = false;
 	// Opcodes simple fallbacks
@@ -63,15 +65,15 @@ struct emu_state
 
 	// Emulated CPU memory control
 	template<typename T>
-	void write(u32 addr, T value)
+	void write(u32 addr, T value) volatile
 	{
-		*reinterpret_cast<std::remove_const_t<T>*>(memBase + addr) = value;
+		*reinterpret_cast<volatile std::remove_const_t<T>*>(memBase + addr) = value;
 	}
 
 	template<typename T>
-	T read(u32 addr)
+	T read(u32 addr) volatile
 	{
-		return *reinterpret_cast<const T*>(memBase + addr);
+		return *reinterpret_cast<const volatile T*>(memBase + addr);
 	}
 
 	template<typename T>

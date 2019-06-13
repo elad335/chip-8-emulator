@@ -33,6 +33,7 @@ void emu_state::reset()
 	std::memset(gfxMemory, 0, sizeof(gfxMemory));
 	std::memset(gpr, 0, sizeof(gpr));
 	std::memset(stack, 0, sizeof(stack));
+	std::memset(reg_save, 0, sizeof(reg_save));
 	emu_state::load_exec(); // Load executable and settings
 	this->ref<u16>(4096) = 0xFFFF; // Instruction flow guard
 	sp = 0;

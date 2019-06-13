@@ -11,7 +11,7 @@ void timerJob()
 		bool result = false;
 
 		// Decrement sound and delay timers if necessary
-		for (u16 old = (u16)g_state.timers.data, state = (std::atomic_thread_fence(std::memory_order_acquire), old);;)
+		for (u16 old = g_state.timers.data, state = old;;)
 		{
 			// Multipliers for delay, sound fields
 			static const auto m_delay = [](const u16 val) -> u16 { return val * 0x100; };
@@ -40,16 +40,16 @@ void timerJob()
 				break;
 			}
 
-			const u16 new_data = (u16)_InterlockedCompareExchange16(&g_state.timers.data, (short)state, (short)old);
+			state = (u16)_InterlockedCompareExchange16((volatile short*)&g_state.timers.data, (short)state, (short)old);
 
-			if (new_data == old)
+			if (state == old)
 			{
 				// Storing success 
 				break;
 			}
 
-			// Refrash data
-			old = state = new_data;
+			// Refresh data
+			old = state;
 		}
 
 		if (result)

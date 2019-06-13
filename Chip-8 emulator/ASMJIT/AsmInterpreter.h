@@ -68,6 +68,8 @@ public:
 	static build_t STD;
 	static build_t STR;
 	static build_t LDR;
+	static build_t FSAVE;
+	static build_t FRESTORE;
 	static build_t UNK;
 	static build_t guard;
 };

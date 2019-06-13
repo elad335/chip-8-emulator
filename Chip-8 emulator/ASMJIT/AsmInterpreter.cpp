@@ -50,8 +50,8 @@ DECLARE(asm_insts::all_ops) =
 	{0xF0FF, 0xF033, false, &asm_insts::STD},
 	{0xF0FF, 0xF055, false, &asm_insts::STR},
 	{0xF0FF, 0xF065, false, &asm_insts::LDR},
-	//{0xF0FF, 0xF075, false, &asm_insts::FSAVE},
-	//{0xF0FF, 0xF085, false, &asm_insts::FRESTORE},
+	{0xF0FF, 0xF075, false, &asm_insts::FSAVE},
+	{0xF0FF, 0xF085, false, &asm_insts::FRESTORE},
 	{0xFFFF, 0xFFFF, true , &asm_insts::guard}
 };
 
@@ -139,6 +139,16 @@ static void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcod
 	}
 };
 
+static inline void getX(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcode)
+{
+	return getField<2>(c, reg, opr);
+}
+
+static inline void getY(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcode)
+{
+	return getField<1>(c, reg, opr);
+}
+
 // Fallback to cpp interpreter for debugging
 static void fallback(X86Assembler& c)
 {
@@ -146,6 +156,7 @@ static void fallback(X86Assembler& c)
 	static const auto call_interpreter = [](emu_state* _state)
 	{
 		_state->OpcodeFallback();
+		std::atomic_thread_fence(std::memory_order_release);
 	};
 
 	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
@@ -406,7 +417,7 @@ void asm_insts::CLS(X86Assembler& c)
 void asm_insts::RET(X86Assembler& c)
 {
 	c.mov(x86::r8d, x86::dword_ptr(state, STATE_OFFS(sp)));
-	c.sub(x86::r8d, 1);
+	c.dec(x86::r8d);
 
 	// Check stack underflow
 	Label ok = c.newLabel();
@@ -458,9 +469,9 @@ static void form_SCRL(X86Assembler& c)
 
 		c.mov(x86::r8d, y_size);
 		c.bind(loop_);
-		c.mov(x86::ecx, (x_size - 4) / sizeof(u32)); // move bytes in dwords
+		c.mov(x86::ecx, zext<u32>((x_size - 4) / sizeof(u32))); // move bytes in dwords
 		c.rep().movsd();
-		c.mov(x86::dword_ptr(dest, is_SCR ? 0 - s32(y_size) : s32(-4)), 0); // Place zeroes on the edge of the screen
+		c.mov(x86::dword_ptr(dest, is_SCR ? 0 - zext<s32>(y_size) : s32(-4)), 0); // Place zeroes on the edge of the screen
 		c.add(source, emu_state::y_stride - (x_size - 4));
 		c.add(dest, emu_state::y_stride - (x_size - 4));
 		c.dec(x86::r8d);
@@ -532,7 +543,7 @@ void asm_insts::CALL(X86Assembler& c)
 
 	// Check stack overflow
 	Label ok = c.newLabel();
-	c.cmp(x86::r8d, 16);
+	c.cmp(x86::r8d, zext<u32>(std::size(g_state.stack)) - 1);
 	c.jne(ok);
 	c.mov(x86::r8, imm_ptr("CALL stack overflow"));
 	c.mov(x86::qword_ptr(state, STATE_OFFS(last_error)), x86::r8);
@@ -551,7 +562,7 @@ void asm_insts::CALL(X86Assembler& c)
 void asm_insts::SEi(X86Assembler& c)
 {
 	c.mov(x86::r8b, opcode.r8());
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sete(x86::dl);
 	c.lea(pc, lea_ptr(pc, x86::rdx, 1, 2));
@@ -560,7 +571,7 @@ void asm_insts::SEi(X86Assembler& c)
 void asm_insts::SNEi(X86Assembler& c)
 {
 	c.mov(x86::r8b, opcode.r8());
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.setne(x86::dl);
 	c.lea(pc, lea_ptr(pc, x86::rdx, 1, 2));
@@ -568,8 +579,8 @@ void asm_insts::SNEi(X86Assembler& c)
 
 void asm_insts::SE(X86Assembler& c)
 {
-	getField<1>(c, x86::r8);
-	getField<2>(c, opcode);
+	getY(c, x86::r8);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sete(x86::dl);
@@ -578,52 +589,52 @@ void asm_insts::SE(X86Assembler& c)
 
 void asm_insts::WRI(X86Assembler& c)
 {
-	getField<2>(c, x86::r8);
+	getX(c, x86::r8);
 	c.mov(x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)), opcode.r8());
 }
 
 void asm_insts::ADDI(X86Assembler& c)
 {
-	getField<2>(c, x86::r8);
+	getX(c, x86::r8);
 	c.add(x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)), opcode.r8());
 }
 
 void asm_insts::ASS(X86Assembler& c)
 {
-	getField<1>(c, x86::r8);
-	getField<2>(c, opcode);
+	getY(c, x86::r8);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
 }
 
 void asm_insts::OR(X86Assembler& c)
 {
-	getField<1>(c, x86::r8);
-	getField<2>(c, opcode);
+	getY(c, x86::r8);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.or_(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
 }
 
 void asm_insts::AND(X86Assembler& c)
 {
-	getField<1>(c, x86::r8);
-	getField<2>(c, opcode);
+	getY(c, x86::r8);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.and_(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
 }
 
 void asm_insts::XOR(X86Assembler& c)
 {
-	getField<1>(c, x86::r8);
-	getField<2>(c, opcode);
+	getY(c, x86::r8);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.xor_(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
 }
 
 void asm_insts::ADD(X86Assembler& c)
 {
-	getField<2>(c, x86::r8);
-	getField<1>(c, opcode);
+	getY(c, x86::r8);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.movzx(x86::r9d, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.add(x86::r8d, x86::r9d);
@@ -634,26 +645,8 @@ void asm_insts::ADD(X86Assembler& c)
 
 void asm_insts::SUB(X86Assembler& c)
 {
-	getField<1>(c, x86::r8);
-	getField<2>(c, opcode);
-	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
-	c.movzx(x86::r9d, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
-	c.sub(x86::r8d, x86::r9d);
-	c.setns(refVF()); // TODO: Check order
-	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
-}
-
-void asm_insts::SHR(X86Assembler& c)
-{
-	getField<2>(c, opcode);
-	c.shr(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), 1);
-	c.setc(refVF());
-}
-
-void asm_insts::RSB(X86Assembler& c)
-{
-	getField<1>(c, x86::r8);
-	getField<2>(c, opcode);
+	getY(c, x86::r8);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.movzx(x86::r9d, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.sub(x86::r9d, x86::r8d);
@@ -661,17 +654,35 @@ void asm_insts::RSB(X86Assembler& c)
 	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r9b);
 }
 
+void asm_insts::SHR(X86Assembler& c)
+{
+	getX(c, opcode);
+	c.shr(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), 1);
+	c.setc(refVF());
+}
+
+void asm_insts::RSB(X86Assembler& c)
+{
+	getY(c, x86::r8);
+	getX(c, opcode);
+	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
+	c.movzx(x86::r9d, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
+	c.sub(x86::r8d, x86::r9d);
+	c.setns(refVF()); // TODO: Check order
+	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
+}
+
 void asm_insts::SHL(X86Assembler& c)
 {
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.shl(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), 1);
 	c.setc(refVF());
 }
 
 void asm_insts::SNE(X86Assembler& c)
 {
-	getField<1>(c, x86::r8);
-	getField<2>(c, opcode);
+	getY(c, x86::r8);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)));
 	c.cmp(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.setne(x86::dl);
@@ -695,8 +706,9 @@ void asm_insts::RND(X86Assembler& c)
 {
 	c.mov(x86::r8d, opcode.r32()); // Save rdx
 	c.rdtsc();
+	c.shr(x86::eax, 8);
 	c.and_(x86::al, x86::r8b); // Mask timestamp
-	getField<2>(c, x86::r8, x86::r8);
+	getX(c, x86::r8, x86::r8);
 	c.mov(x86::byte_ptr(state, x86::r8, 0, STATE_OFFS(gpr)), x86::al);
 }
 
@@ -717,12 +729,12 @@ static void form_DRW(X86Assembler& c)
 	{
 		// Load is_extended value
 		c.movzx(x86::ebx, x86::byte_ptr(state, STATE_OFFS(extended)));
-		c.mov(x86::r11b, x86::bl);
+		c.mov(x86::r11d, x86::ebx);
 		c.shl(x86::r11b, clog2<0x3f>()); // Shift it to the bit exactly after the end of 0x1f
 		c.or_(x86::r11b, 0x3f); // Now we OR it (to get 0x7f on extended mode)
 	}
 
-	getField<2>(c, x86::r10);
+	getX(c, x86::r10);
 	c.mov(x86::r10b, x86::byte_ptr(state, x86::r10, 0, STATE_OFFS(gpr)));
 
 	// Apply x mask
@@ -736,7 +748,7 @@ static void form_DRW(X86Assembler& c)
 		c.and_(x86::r10b, 0x3f);
 	}
 
-	getField<1>(c, x86::r9);
+	getY(c, x86::r9);
 	c.mov(x86::r9b, x86::byte_ptr(state, x86::r9, 0, STATE_OFFS(gpr)));
 
 	if (is_super) // Apply y mask
@@ -918,7 +930,7 @@ void asm_insts::XDRW(X86Assembler& c)
 
 void asm_insts::SKP(X86Assembler& c)
 {
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::r8, imm_ptr(&input::keyIDs));
@@ -932,7 +944,7 @@ void asm_insts::SKP(X86Assembler& c)
 
 void asm_insts::SKNP(X86Assembler& c)
 {
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::r8, imm_ptr(&input::keyIDs));
@@ -948,38 +960,36 @@ void asm_insts::SKNP(X86Assembler& c)
 void asm_insts::GetD(X86Assembler& c)
 {
 	c.mov(x86::r8b, x86::byte_ptr(state, STATE_OFFS(timers) + ::offset_of(&decltype(emu_state::timers)::delay)));
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.mov(x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)), x86::r8b);
 }
 
 void asm_insts::GetK(X86Assembler& c)
 {
-	c.mov(x86::dword_ptr(state, STATE_OFFS(pc)), pc.r32());
 	c.mov(pc, opcode); // Save rdx
 	c.call(imm_ptr(&input::WaitForPress));
 	c.mov(state, imm_ptr(&g_state));
-	getField<2>(c, pc, pc);
+	getX(c, pc, pc);
 	c.mov(x86::byte_ptr(state, pc, 0, STATE_OFFS(gpr)), retn.r8());
-	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 }
 
 void asm_insts::SetD(X86Assembler& c)
 {
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset_of(&decltype(emu_state::timers)::delay)), x86::r8b);
 }
 
 void asm_insts::SetS(X86Assembler& c)
 {
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.mov(x86::r8b, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.mov(x86::byte_ptr(state, STATE_OFFS(timers) + ::offset_of(&decltype(emu_state::timers)::sound)), x86::r8b);
 }
 
 void asm_insts::AddIndex(X86Assembler& c)
 {
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.add(x86::edx, x86::dword_ptr(state, STATE_OFFS(index)));
 	c.mov(x86::dword_ptr(state, STATE_OFFS(index)), x86::edx);
@@ -987,7 +997,7 @@ void asm_insts::AddIndex(X86Assembler& c)
 
 void asm_insts::SetCh(X86Assembler& c)
 {
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.mov(x86::dl, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.and_(x86::dl, 0xf);
 	c.mov(x86::eax, 5);
@@ -999,7 +1009,7 @@ void asm_insts::STD(X86Assembler& c)
 {
 	// div instruction produces both quotient and reminder
 	// Let's make a good use of it
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.movzx(x86::eax, x86::byte_ptr(state, x86::rdx, 0, STATE_OFFS(gpr)));
 	c.mov(x86::dl, 100);
 	c.div(x86::dl);
@@ -1016,7 +1026,7 @@ void asm_insts::STD(X86Assembler& c)
 
 void asm_insts::STR(X86Assembler& c)
 {
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.inc(opcode.r8());
 	c.mov(x86::r8, state); // Save state
 	c.mov(x86::ecx, opcode.r32());
@@ -1032,7 +1042,7 @@ void asm_insts::STR(X86Assembler& c)
 
 void asm_insts::LDR(X86Assembler& c)
 {
-	getField<2>(c, opcode);
+	getX(c, opcode);
 	c.inc(opcode.r8());
 	c.mov(x86::r8, state);
 	c.mov(x86::ecx, opcode.r32());
@@ -1044,6 +1054,40 @@ void asm_insts::LDR(X86Assembler& c)
 	if (g_state.is_super)
 		c.and_(opcode.r32(), x86::dword_ptr(state, STATE_OFFS(compatibilty))); // Zero out if compat flag is false
 	c.add(x86::dword_ptr(state, STATE_OFFS(index)), opcode.r32());
+}
+
+void asm_insts::FSAVE(X86Assembler& c)
+{
+	if (!g_state.is_super)
+	{
+		c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::UNK * GET_SIZE_MEM(ops)));
+	}
+
+	getX(c, opcode);
+	c.inc(opcode.r8());
+	c.mov(x86::r8, state); // Save state
+	c.mov(x86::ecx, opcode.r32());
+	c.lea(x86::rdi, lea_ptr(x86::r8, STATE_OFFS(reg_save)));
+	c.lea(x86::rsi, lea_ptr(x86::r8, STATE_OFFS(gpr)));
+	c.rep().movsb();
+	c.mov(state, x86::r8);
+}
+
+void asm_insts::FRESTORE(X86Assembler& c)
+{
+	if (!g_state.is_super)
+	{
+		c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::UNK * GET_SIZE_MEM(ops)));
+	}
+
+	getX(c, opcode);
+	c.inc(opcode.r8());
+	c.mov(x86::r8, state);
+	c.mov(x86::ecx, opcode.r32());
+	c.lea(x86::rsi, lea_ptr(x86::r8, STATE_OFFS(reg_save)));
+	c.lea(x86::rdi, lea_ptr(x86::r8, STATE_OFFS(gpr)));
+	c.rep().movsb();
+	c.mov(state, x86::r8);
 }
 
 void asm_insts::UNK(X86Assembler& c)

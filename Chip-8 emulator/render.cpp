@@ -8,7 +8,7 @@ GLuint sVertexbuffer, sTexCoordsbuffer;
 GLFWwindow* window{};
 
 // Triangle strip forming a rectangle
-static const GLfloat s_vertex_buffer_data[] =
+const GLfloat s_vertex_buffer_data[] =
 {
    -1.f, -1.f, 0.f,
    1.f, -1.f, 0.f,
@@ -16,7 +16,7 @@ static const GLfloat s_vertex_buffer_data[] =
    1.f, 1.f, 0.f,
 };
 
-static const GLfloat s_vertex_buffer_tex_data[] =
+const GLfloat s_vertex_buffer_tex_data[] =
 {
    0.f, 1.f,
    1.f, 1.f,

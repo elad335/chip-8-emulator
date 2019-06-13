@@ -52,7 +52,7 @@ namespace
 		if (!value)
 		{
 			// Segfault
-			static_cast<volatile std::atomic<u32>*>(nullptr)->load();
+			const u32 dummy = static_cast<volatile std::atomic<u32>*>(nullptr)->load();
 		}
 
 		return value;
@@ -65,7 +65,7 @@ namespace
 		if (!std::invoke(std::forward<F>(func), value))
 		{
 			// Segfault
-			static_cast<volatile std::atomic<u32>*>(nullptr)->load();
+			const u32 dummy = static_cast<volatile std::atomic<u32>*>(nullptr)->load();
 		}
 
 		return value;

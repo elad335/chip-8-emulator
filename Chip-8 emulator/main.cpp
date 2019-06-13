@@ -104,15 +104,6 @@ void emu_state::load_exec()
 			Sleep(50); // Hack, simulate key press events
 			display_buf[(line_offset + index) * 65] = ' ';
 			update = true;
-			index++;
-			index %= names.size();
-		}
-
-		if (input::TestKeyState(VK_DOWN, 0x53))
-		{
-			Sleep(50); // Hack, simulate key press events
-			display_buf[(line_offset + index) * 65] = ' ';
-			update = true;
 
 			if (index != 0)
 			{
@@ -122,6 +113,14 @@ void emu_state::load_exec()
 			{
 				index = names.size() - 1;
 			}
+		}
+		else if (input::TestKeyState(VK_DOWN, 0x53))
+		{
+			Sleep(50); // Hack, simulate key press events
+			display_buf[(line_offset + index) * 65] = ' ';
+			update = true;
+			index++;
+			index %= names.size();
 		}
 
 		if (update)
