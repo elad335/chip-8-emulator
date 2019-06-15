@@ -164,6 +164,129 @@ static void fallback(X86Assembler& c)
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 }
 
+// Fallback to cpp interpreter for debugging
+static void print_inst()
+{
+	struct print_inst_t
+	{
+		u16 mask, opcode;
+		std::string_view name;
+	};
+
+	static const std::initializer_list<print_inst_t> insts =
+	{
+		{0xFFFF, 0x00E0, "CLS"},
+		{0xFFFF, 0x00EE, "RET"},
+		{0xFFFF, 0x00FA, "Compat"},
+		{0xFFFF, 0x00FB, "SCR"},
+		{0xFFFF, 0x00FC, "SCL"},
+		{0xFFFF, 0x00FE, "RESL"},
+		{0xFFFF, 0x00FF, "RESH"},
+		{0xF000, 0x1000, "JP"},
+		{0xF000, 0x2000, "CALL"},
+		{0xF000, 0x3000, "SEi"},
+		{0xF000, 0x4000, "SNEi"},
+		{0xF00F, 0x5000, "SE"},
+		{0xF000, 0x6000, "WRI"},
+		{0xF000, 0x7000, "ADDI"},
+		{0xF00F, 0x8000, "ASS"},
+		{0xF00F, 0x8001, "OR"},
+		{0xF00F, 0x8002, "AND"},
+		{0xF00F, 0x8003, "XOR"},
+		{0xF00F, 0x8004, "ADD"},
+		{0xF00F, 0x8005, "SUB"},
+		{0xF00F, 0x8006, "SHR"},
+		{0xF00F, 0x8007, "RSB"},
+		{0xF00F, 0x800E, "SHL"},
+		{0xF00F, 0x9000, "SNE"},
+		{0xF000, 0xA000, "SetIndex"},
+		{0xF000, 0xB000, "JPr"},
+		{0xF000, 0xC000, "RND"},
+		{0xF000, 0xD000, "DRW"},
+		{0xF00F, 0xD000, "XDRW"},
+		{0xF0FF, 0xE09E, "SKP"},
+		{0xF0FF, 0xE0A1, "SKNP"},
+		{0xF0FF, 0xF007, "GetD"},
+		{0xF0FF, 0xF00A, "GetK"},
+		{0xF0FF, 0xF015, "SetD"},
+		{0xF0FF, 0xF018, "SetS"},
+		{0xF0FF, 0xF01E, "AddIndex"},
+		{0xF0FF, 0xF029, "SetCh"},
+		{0xF0FF, 0xF033, "STD"},
+		{0xF0FF, 0xF055, "STR"},
+		{0xF0FF, 0xF065, "LDR"},
+		{0xF0FF, 0xF075, "FSAVE"},
+		{0xF0FF, 0xF085, "FRESTORE"},
+		{0xFFFF, 0xFFFF, "guard"},
+		{0x0000, 0x0000, "UNK"}
+	};
+
+	// Scalers for each field
+	static const auto m3 = [](const u32& val) -> u32 { return val * 0x1000; };
+	static const auto m2 = [](const u32& val) -> u32 { return val * 0x100; };
+	static const auto m1 = [](const u32& val) -> u32 { return val * 0x10; };
+	static const auto m0 = [](const u32& val) -> u32 { return val * 0x1; };
+
+	static thread_local bool paused = false;
+	if (input::TestKeyState(0x50))
+	{
+		paused = true;
+	}
+	else if (input::TestKeyState(0x52))
+	{
+		paused = false;
+	}
+
+	const u16 op = get_be_data<u16>(g_state.read<u16>(g_state.pc));
+
+	// Go through all possible opcodes which this instruction may fit in
+	if (paused) for (const auto& entry : insts)
+	{
+		// Get instruction pattern mask and pattern opcode 
+		const u32 imask = u32(entry.mask);
+		const u32 icode = u32(entry.opcode);
+
+		// Test if opocde is within specified bounds for each field
+		if ((imask & m3(0xF)) && ((icode ^ op) & m3(0xF)) != 0)
+		{
+			continue;
+		}
+
+		if ((imask & m2(0xF)) && ((icode ^ op) & m2(0xF)) != 0)
+		{
+			continue;
+		}
+
+		if ((imask & m1(0xF)) && ((icode ^ op) & m1(0xF)) != 0)
+		{
+			continue;
+		}
+
+		if ((imask & m0(0xF)) && ((icode ^ op) & m0(0xF)) != 0)
+		{
+			continue;
+		}
+
+		std::string x_ = !(imask & m2(0xF)) ? ("V" + std::to_string(getField<2>(op)) + ", ") : "";
+		std::string y_ = !(imask & m1(0xF)) ? ("V" + std::to_string(getField<1>(op)) + " ") : "";
+
+		printf("[%04x] %s %s%s(0x%04x)\n", g_state.pc, entry.name.data(), x_.c_str(), y_.c_str(), op);
+		break;
+	}
+
+	for (u32 i = 0; i < 5; i++)
+	{
+		(!g_state.extended ? KickChip8Framebuffer : KickSChip8Framebuffer)(&g_state.gfxMemory[0]);
+
+		if (!paused)
+		{
+			break;
+		}
+
+		Sleep(200);
+	}
+}
+
 // Try to emit a loop instruction
 // loop instruction uses Imm8 for relative so it may fail if distance is too long
 // If that happens use dec ecx + jne instead
