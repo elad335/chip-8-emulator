@@ -406,8 +406,17 @@ void emu_state::OpcodeFallback()
 					continue;
 				}
 
-				// Wrap around x and y axises
-				used_offset &= xy_mask;
+				if (DRW_wrapping)
+				{
+					// Wrap around x and y axises
+					used_offset &= xy_mask;
+				}
+				else
+				{
+					// Skip pixel if not within bounderies
+					if ((used_offset & (~xy_mask)) != 0)
+						continue;
+				}
 
 				// Obtain pointer to the pixel dst
 				auto& pix = gfxMemory[used_offset];

@@ -37,7 +37,7 @@ struct emu_state
 	// Is schip 8 boolean
 	bool is_super = false;
 	// DRW wrapping override
-	bool DRW_wrapping = true;
+	bool DRW_wrapping = false;
 	// Debug data: last error string
 	const char* volatile last_error = "";
 	// is in emulation?
@@ -60,7 +60,7 @@ struct emu_state
 	static constexpr size_t xy_mask = (0x1f * y_stride) | (0x3f);
 	static constexpr size_t xy_mask_ex = (0x3f * y_stride) | (0x7f);
 
-	// Video memory (64*32 pixels, see DRW for details)
+	// Video memory (128*64 pixels max, see DRW for details)
 	alignas(32) u8 gfxMemory[y_stride * y_size_ex];
 
 	// Emulated CPU memory control

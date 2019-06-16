@@ -164,7 +164,7 @@ static void fallback(X86Assembler& c)
 	c.mov(pc.r32(), x86::dword_ptr(state, STATE_OFFS(pc)));
 }
 
-// Fallback to cpp interpreter for debugging
+// WIP disassmebler
 static void print_inst()
 {
 	struct print_inst_t
@@ -1004,7 +1004,6 @@ static void form_DRW(X86Assembler& c)
 						c.test(x86::r12d, x86::r15d);
 						c.jne(next);
 					}
-
 				}
 				else
 				{
