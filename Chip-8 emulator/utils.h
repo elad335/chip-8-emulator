@@ -52,7 +52,7 @@ namespace
 		if (!value)
 		{
 			// Segfault
-			const u32 dummy = static_cast<volatile std::atomic<u32>*>(nullptr)->load();
+			static_cast<volatile std::atomic_flag*>(nullptr)->test_and_set();
 		}
 
 		return value;
@@ -65,7 +65,7 @@ namespace
 		if (!std::invoke(std::forward<F>(func), value))
 		{
 			// Segfault
-			const u32 dummy = static_cast<volatile std::atomic<u32>*>(nullptr)->load();
+			static_cast<volatile std::atomic_flag*>(nullptr)->test_and_set();
 		}
 
 		return value;
@@ -75,14 +75,14 @@ namespace
 // Guarenteed zero extension regardless of the sign of the source and destination types
 // Note: can also be used for truncuation 
 template<typename To, typename From>
-static inline constexpr To zext(const From& from)
+inline constexpr To zext(const From& from)
 {
 	return static_cast<To>(static_cast<std::make_unsigned_t<To>>(static_cast<std::make_unsigned_t<From>>(from)));
 }
 
 // Guarenteed sign extension regardless of the sign of the source and destination types
 template<typename To, typename From>
-static inline constexpr To sext(const From& from)
+inline constexpr To sext(const From& from)
 {
 	return static_cast<To>(static_cast<std::make_signed_t<To>>(static_cast<std::make_signed_t<From>>(from)));
 }
@@ -100,7 +100,7 @@ inline To bitcast(const From& from) noexcept
 
 // Get integral/floats data as BE endian data (assume host LE architecture)
 template <typename T>
-static inline T get_be_data(const T& data)
+inline T get_be_data(const T& data)
 {
 	constexpr size_t N = sizeof(T);
 
@@ -129,7 +129,7 @@ static inline T get_be_data(const T& data)
 
 // This returns relative offset of member class from 'this' (enhanced version of offsetof macro)
 template <typename T, typename T2>
-static inline u32 offset_of(T T2::*const mptr)
+inline u32 offset_of(T T2::*const mptr)
 {
 	return ::bitcast<u32>(mptr);
 }
@@ -147,44 +147,44 @@ bool has_avx();
 bool has_movbe();
 
 // Bit scanning utils
-static inline u32 cntlz32(u32 arg, bool nonzero = false)
+inline u32 cntlz32(u32 arg, bool nonzero = false)
 {
 	unsigned long res;
 	return _BitScanReverse(&res, arg) || nonzero ? res ^ 31 : 32;
 }
 
-static inline u64 cntlz64(u64 arg, bool nonzero = false)
+inline u64 cntlz64(u64 arg, bool nonzero = false)
 {
 	unsigned long res;
 	return _BitScanReverse64(&res, arg) || nonzero ? res ^ 63 : 64;
 }
 
-static inline u32 cnttz32(u32 arg, bool nonzero = false)
+inline u32 cnttz32(u32 arg, bool nonzero = false)
 {
 	unsigned long res;
 	return _BitScanForward(&res, arg) || nonzero ? res : 32;
 }
 
-static inline u64 cnttz64(u64 arg, bool nonzero = false)
+inline u64 cnttz64(u64 arg, bool nonzero = false)
 {
 	unsigned long res;
 	return _BitScanForward64(&res, arg) || nonzero ? res : 64;
 }
 
 // Lightweight log2 functions (doesnt use floating point)
-static inline u32 flog2(u32 value) // Floor log2
+inline u32 flog2(u32 value) // Floor log2
 {
 	return value <= 1 ? 0 : ::cntlz32(value, true) ^ 31;
 }
 
-static inline u32 clog2(u32 value) // Ceil log2
+inline u32 clog2(u32 value) // Ceil log2
 {
 	return value <= 1 ? 0 : ::cntlz32((value - 1) << 1, true) ^ 31;
 }
 
 // Constexpr log2 varients (<3)
 template<umax_t value>
-static inline constexpr u8 flog2()
+inline constexpr u8 flog2()
 {
 	umax_t value_ = value;
 
@@ -194,16 +194,17 @@ static inline constexpr u8 flog2()
 	{
 		if (value_ == 0)
 		{
-			return i;
+			constexpr u8 res = i; // Verify constexpr
+			return res;
 		}
 	}
 }
 
 template<umax_t value>
-static inline constexpr u8 clog2()
+inline constexpr u8 clog2()
 {
 	umax_t value_ = value;
-	const umax_t ispow2 = value_ & (value_ - 1); // if power of 2 the result is 0
+	constexpr umax_t ispow2 = value & (value - 1); // if power of 2 the result is 0
 
 	value_ >>= 1;
 
@@ -211,7 +212,8 @@ static inline constexpr u8 clog2()
 	{
 		if (value_ == 0)
 		{
-			return i + zext<u8>(std::min<umax_t>(ispow2, 1));
+			constexpr u8 res = i + zext<u8>(std::min<umax_t>(ispow2, 1)); // Verify constexpr
+			return res;
 		}
 	}
 }

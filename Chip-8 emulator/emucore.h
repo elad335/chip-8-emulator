@@ -13,7 +13,7 @@ struct emu_state
 	// Stack pointer
 	u32 sp;
 	// Current instruction address
-	volatile u32 pc;
+	u32 pc;
 	// Memory pointer
 	u32 index;
 	// Container for delay timer and sound timer
@@ -29,7 +29,7 @@ struct emu_state
 	// Place to save and restore registers in 'flags'
 	u8 reg_save[16];
 	// Video mode
-	volatile bool extended = false;
+	bool extended = false;
 	// Asmjit/Interpreter: function table
 	std::uintptr_t ops[UINT16_MAX + 1];
 	// Settings section: sleep between instructions in ms
@@ -39,7 +39,7 @@ struct emu_state
 	// DRW wrapping override
 	bool DRW_wrapping = false;
 	// Debug data: last error string
-	const char* volatile last_error = "";
+	const char* last_error = "";
 	// is in emulation?
 	bool emu_started = false;
 	// Opcodes simple fallbacks

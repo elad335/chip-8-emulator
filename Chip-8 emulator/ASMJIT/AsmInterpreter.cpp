@@ -63,12 +63,12 @@ enum s_ops : uptr
 };
 
 //
-static const X86Gp& state = x86::rcx;
-static const X86Gp& opcode = x86::rdx;
-static const X86Gp& pc = x86::rbp;
+const X86Gp& state = x86::rcx;
+const X86Gp& opcode = x86::rdx;
+const X86Gp& pc = x86::rbp;
 
 // Function arguments on x86-64 Windows
-static std::array<const X86Gp, 4> args = 
+const std::array<X86Gp, 4> args = 
 {
 	x86::rcx,
 	x86::rdx,
@@ -77,7 +77,7 @@ static std::array<const X86Gp, 4> args =
 };
 
 // Default return register on x86-64 Windows
-static const X86Gp& retn = x86::rax;
+const X86Gp& retn = x86::rax;
 
 // Temporaries
 //std::array<X86Gp, 7> tr = 
@@ -114,10 +114,10 @@ static std::function<void(X86Assembler&)> from_end{};
 //#define get_u8 x86::byte_ptr
 
 // TODO (add a setting for it)
-static const bool g_sleep_supported = true;
+const bool g_sleep_supported = true;
 
 template <u32 _index, bool is_be = false>
-static void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcode)
+void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcode)
 {
 	// Byteswap fields if specified
 	constexpr u32 index = _index ^ (is_be ? 2 : 0);
@@ -139,18 +139,18 @@ static void getField(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcod
 	}
 };
 
-static inline void getX(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcode)
+inline void getX(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcode)
 {
 	return getField<2>(c, reg, opr);
 }
 
-static inline void getY(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcode)
+inline void getY(X86Assembler& c, const X86Gp& reg, const X86Gp& opr = opcode)
 {
 	return getField<1>(c, reg, opr);
 }
 
 // Fallback to cpp interpreter for debugging
-static void fallback(X86Assembler& c)
+void fallback(X86Assembler& c)
 {
 	// Wrapper to member function
 	static const auto call_interpreter = [](emu_state* _state)
@@ -165,7 +165,7 @@ static void fallback(X86Assembler& c)
 }
 
 // WIP disassmebler
-static void print_inst()
+void print_inst()
 {
 	struct print_inst_t
 	{
@@ -290,7 +290,7 @@ static void print_inst()
 // Try to emit a loop instruction
 // loop instruction uses Imm8 for relative so it may fail if distance is too long
 // If that happens use dec ecx + jne instead
-static void try_loop(X86Assembler& c, Label& label)
+void try_loop(X86Assembler& c, Label& label)
 {
 	if (c.getLastError() == ErrorCode::kErrorOk
 		&& c.loop(label) != ErrorCode::kErrorOk)
@@ -301,14 +301,14 @@ static void try_loop(X86Assembler& c, Label& label)
 	}
 }
 
-static asmjit::X86Mem refVF()
+asmjit::X86Mem refVF()
 {
 	// The 15 register
 	return x86::byte_ptr(state, STATE_OFFS(gpr) + 0xf);
 };
 
 template <typename F>
-static asm_insts::func_t build_instruction(const F& func, const bool jump)
+asm_insts::func_t build_instruction(const F& func, const bool jump)
 {
 	return build_function_asm<asm_insts::func_t>([&](X86Assembler& c)
 	{

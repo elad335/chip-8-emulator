@@ -2,10 +2,10 @@
 #include "emucore.h"
 
 // static vertex array ID
-GLuint sVertexArrayID;
-GLuint sVertexbuffer, sTexCoordsbuffer;
+static GLuint sVertexArrayID;
+static GLuint sVertexbuffer, sTexCoordsbuffer;
 
-GLFWwindow* window{};
+static GLFWwindow* window = {};
 
 // Triangle strip forming a rectangle
 const GLfloat s_vertex_buffer_data[] =
@@ -56,7 +56,7 @@ void InitWindow()
 		glfwTerminate(); // GLFW cleanup
 		g_state.terminate = true; // Signal timers thread
 		g_state.hwtimers->join(); // join
-		exit(0); // Actually exit
+		std::exit(0); // Actually exit
 	});
 
 	glfwMakeContextCurrent(window); // Initialize GLEW
@@ -88,7 +88,7 @@ void InitWindow()
 }
 
 // No real need to load from files
-const char* s_default_vertex_shader =
+const char s_default_vertex_shader[] =
 "#version 330 core\n"
 
 // Input vertex data
@@ -104,7 +104,7 @@ const char* s_default_vertex_shader =
 "}"
 ;
 
-const char* s_default_fragment_shader =
+const char s_default_fragment_shader[] =
 "#version 330 core\n"
 
 // Interpolated values from the vertex shaders
