@@ -22,4 +22,4 @@ A 0 B F                Z X C V
 
 Interpreter
 ---------------------------------------
-Interpreter is entirely based on asmjit to allow unique optimizations.
+Interpreter is entirely based on ASMJIT to allow unique optimizations.
