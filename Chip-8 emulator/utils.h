@@ -52,7 +52,7 @@ namespace
 		if (!value)
 		{
 			// Segfault
-			static_cast<volatile std::atomic_flag*>(nullptr)->test_and_set();
+			+*static_cast<volatile char*>(nullptr);
 		}
 
 		return value;
@@ -65,7 +65,7 @@ namespace
 		if (!std::invoke(std::forward<F>(func), value))
 		{
 			// Segfault
-			static_cast<volatile std::atomic_flag*>(nullptr)->test_and_set();
+			+*static_cast<volatile char*>(nullptr);
 		}
 
 		return value;
