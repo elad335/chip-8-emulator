@@ -100,31 +100,30 @@ inline To bitcast(const From& from) noexcept
 
 // Get integral/floats data as BE endian data (assume host LE architecture)
 template <typename T>
-inline T get_be_data(const T& data)
+inline std::decay_t<T> get_be_data(const T& data)
 {
 	constexpr size_t N = sizeof(T);
 
 	if constexpr (N == 1)
 	{
-		return data;
+		return static_cast<std::decay_t<T>>(data);
 	}
 
 	if constexpr (N == 2)
 	{
-		return bitcast<u16>(_byteswap_ushort(bitcast<u16>(data)));
+		return ::bitcast<std::decay_t<T>>(_byteswap_ushort(::bitcast<u16>(data)));
 	}
 
 	if constexpr (N == 4)
 	{
-		return bitcast<u32>(_byteswap_ulong(bitcast<u32>(data)));
+		return ::bitcast<std::decay_t<T>>(_byteswap_ulong(::bitcast<u32>(data)));
 	}
 
-	if constexpr (N == 8)
+	//bitcast will handle the assert for invalid types
+	//if constexpr (N == 8)
 	{
-		return bitcast<u64>(_byteswap_ushort(bitcast<u64>(data)));
+		return ::bitcast<std::decay_t<T>>(_byteswap_ushort(::bitcast<u64>(data)));
 	}
-
-	assert(false);
 }
 
 // This returns relative offset of member class from 'this' (enhanced version of offsetof macro)
