@@ -52,7 +52,7 @@ namespace
 		if (!value)
 		{
 			// Segfault
-			+*static_cast<volatile char*>(nullptr);
+			+*std::add_pointer_t<volatile char>{};
 		}
 
 		return value;
@@ -65,7 +65,7 @@ namespace
 		if (!std::invoke(std::forward<F>(func), value))
 		{
 			// Segfault
-			+*static_cast<volatile char*>(nullptr);
+			+*std::add_pointer_t<volatile char>{};
 		}
 
 		return value;
@@ -75,16 +75,16 @@ namespace
 // Guarenteed zero extension regardless of the sign of the source and destination types
 // Note: can also be used for truncuation 
 template<typename To, typename From>
-inline constexpr To zext(const From& from)
+inline constexpr To zext(From from)
 {
-	return static_cast<To>(static_cast<std::make_unsigned_t<To>>(static_cast<std::make_unsigned_t<From>>(from)));
+	return static_cast<To>(static_cast<std::make_unsigned_t<From>>(from));
 }
 
 // Guarenteed sign extension regardless of the sign of the source and destination types
 template<typename To, typename From>
-inline constexpr To sext(const From& from)
+inline constexpr To sext(From from)
 {
-	return static_cast<To>(static_cast<std::make_signed_t<To>>(static_cast<std::make_signed_t<From>>(from)));
+	return static_cast<To>(static_cast<std::make_signed_t<From>>(from));
 }
 
 // A partial equivalent to c++20's std::bit_cast (not constexpr)
