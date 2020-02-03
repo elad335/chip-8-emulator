@@ -95,7 +95,7 @@ const X86Gp& retn = x86::rax;
 static std::function<void(X86Assembler&)> from_end{};
 
 #define STATE_OFFS(member) ::offset_of(&emu_state::member)
-#define STACK_RESERVE (0x28)
+constexpr u32 STACK_RESERVE = 0x28;
 
 // Addressing helpers:
 // Get offset shift by type (size must be 1, 2, 4, or 8)
@@ -222,10 +222,10 @@ void print_inst()
 	};
 
 	// Scalers for each field
-	static const auto m3 = [](const u32& val) -> u32 { return val * 0x1000; };
-	static const auto m2 = [](const u32& val) -> u32 { return val * 0x100; };
-	static const auto m1 = [](const u32& val) -> u32 { return val * 0x10; };
-	static const auto m0 = [](const u32& val) -> u32 { return val * 0x1; };
+	const auto m3 = [](u32 val) { return val * 0x1000; };
+	const auto m2 = [](u32 val) { return val * 0x100; };
+	const auto m1 = [](u32 val) { return val * 0x10; };
+	const auto m0 = [](u32 val) { return val * 0x1; };
 
 	static thread_local bool paused = false;
 	if (input::TestKeyState(0x50))
@@ -364,14 +364,14 @@ void asm_insts::build_all(std::uintptr_t* table)
 		const std::remove_pointer_t<decltype(table)> func_ptr = build_instruction(entry.builder, entry.is_jump);
 
 		// Get instruction pattern mask and pattern opcode 
-		const u32 imask = u32(entry.mask);
-		const u32 icode = u32(entry.opcode);
+		const u32 imask = entry.mask;
+		const u32 icode = entry.opcode;
 
 		// Scalers for each field
-		static const auto m3 = [](const u32& val) -> u32 { return val * 0x1000; };
-		static const auto m2 = [](const u32& val) -> u32 { return val * 0x100; };
-		static const auto m1 = [](const u32& val) -> u32 { return val * 0x10; };
-		static const auto m0 = [](const u32& val) -> u32 { return val * 0x1; };
+		const auto m3 = [](u32 val) { return val * 0x1000; };
+		const auto m2 = [](u32 val) { return val * 0x100; };
+		const auto m1 = [](u32 val) { return val * 0x10; };
+		const auto m0 = [](u32 val) { return val * 0x1; };
 
 		// Go through all possible opcodes which this instruction may fit in
 		for (u32 op = (icode & imask); op < UINT16_MAX + 1;)
@@ -634,7 +634,7 @@ void asm_insts::RESL(X86Assembler& c)
 		c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::UNK * GET_SIZE_MEM(ops)));
 	}
 
-	c.mov(x86::byte_ptr(state, STATE_OFFS(extended)), (u8)false);
+	c.mov(x86::byte_ptr(state, STATE_OFFS(extended)), u8{false});
 
 	// TODO: is the screen cleared even when resolution didnt change?
 	c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::CLS * GET_SIZE_MEM(ops)));
@@ -647,7 +647,7 @@ void asm_insts::RESH(X86Assembler& c)
 		c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::UNK * GET_SIZE_MEM(ops)));
 	}
 
-	c.mov(x86::byte_ptr(state, STATE_OFFS(extended)), (u8)true);
+	c.mov(x86::byte_ptr(state, STATE_OFFS(extended)), u8{true});
 
 	// TODO: is the screen cleared even when resolution didnt change?
 	c.jmp(x86::qword_ptr(state, STATE_OFFS(ops) + s_ops::CLS * GET_SIZE_MEM(ops)));
@@ -908,14 +908,14 @@ static void form_DRW(X86Assembler& c)
 	{
 		c.mov(x86::r15d, x86::ebx);
 		c.neg(x86::r15d); // = extended ? 0xFFFFFFFF : 0
-		c.and_(x86::r15d, (~(u32)emu_state::xy_mask) & emu_state::xy_mask_ex); // Get different bits in mask between modes and mask them
+		c.and_(x86::r15d, ~emu_state::xy_mask & emu_state::xy_mask_ex); // Get different bits in mask between modes and mask them
 		c.or_(x86::r15d, emu_state::xy_mask); // Get the actual mask
 		c.not_(x86::r15d);
 		c.test(x86::r12d, x86::r15d);
 	}
 	else
 	{
-		c.test(x86::r12d, ~((u32)emu_state::xy_mask));
+		c.test(x86::r12d, ~emu_state::xy_mask);
 	}
 
 	c.jne(needs_wrapping);
