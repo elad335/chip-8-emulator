@@ -1227,15 +1227,3 @@ void asm_insts::guard(X86Assembler& c)
 }
 
 DECLARE(asm_insts::entry);
-
-#undef lea_ptr
-#undef DECLARE
-#undef STATE_OFFS
-#undef DEBUG_INSTS
-#undef STACK_RESERVE
-#undef GET_SHIFT
-#undef GET_SHIFT_ARR
-#undef GET_ARR_SIZE
-#undef GET_SIZE_MEM
-#undef GET_SHIFT_MEMBER
-#undef ARR_SUBSCRIPT
